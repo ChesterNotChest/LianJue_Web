@@ -1,7 +1,7 @@
 import {
-  RAW_ASK_QUESTION_RESPONSE,
-  RAW_PERSONAL_SYLLABUS_RESPONSES,
-  RAW_STUDENT_LIST_RESPONSE,
+  RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1,
+  RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7,
 } from './mock_payloads';
 import { listSyllabusFiles } from './file_transmit_api';
 
@@ -136,17 +136,21 @@ function applyStudyHours(personalSyllabus, weekIndex, studyTimeSpent) {
 }
 
 export async function listStudentSyllabusesRaw() {
-  return cloneData(RAW_STUDENT_LIST_RESPONSE);
+  return cloneData(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7);
 }
 
 export async function getPersonalSyllabusRaw(syllabusId) {
-  return cloneData(RAW_PERSONAL_SYLLABUS_RESPONSES[syllabusId]);
+  return cloneData(RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[syllabusId]);
 }
 
 export async function askQuestionRaw(payload = {}) {
   return {
-    ...cloneData(RAW_ASK_QUESTION_RESPONSE),
-    request: payload,
+    ...cloneData(RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1),
+    request: {
+      user_id: payload.userId ?? null,
+      syllabus_id: payload.syllabusId ?? null,
+      question: payload.question ?? '',
+    },
   };
 }
 
@@ -164,7 +168,11 @@ export async function initPersonalSyllabusRaw(payload = {}) {
 }
 
 export async function updatePersonalSyllabusRaw(payload = {}) {
-  const source = cloneData(RAW_PERSONAL_SYLLABUS_RESPONSES[payload.syllabusId]?.syllabus ?? RAW_PERSONAL_SYLLABUS_RESPONSES[1]?.syllabus ?? null);
+  const source = cloneData(
+    RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[payload.syllabusId]?.syllabus ??
+      RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[1]?.syllabus ??
+      null,
+  );
   const updated = source ? applyStudyHours(source, payload.weekIndex, payload.studyTimeSpent) : null;
 
   return {

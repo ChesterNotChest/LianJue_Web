@@ -629,6 +629,12 @@ a {
   font-weight: 700;
 }
 
+.week-axis-status-stack {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
 .week-axis-ruler {
   display: flex;
   align-items: center;
@@ -669,6 +675,21 @@ a {
   color: var(--text);
 }
 
+.week-axis-editor-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.week-axis-readonly {
+  min-height: 92px;
+  border: 1px solid rgba(72, 54, 36, 0.12);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(72, 54, 36, 0.04);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .tone-low .week-axis-ruler-dot,
 .tone-none .week-axis-ruler-dot {
   background: rgba(138, 129, 116, 0.76);
@@ -686,6 +707,21 @@ a {
 
 .tone-master .week-axis-ruler-dot {
   background: rgba(31, 92, 74, 0.9);
+}
+
+.week-axis-card.time-past .week-axis-ruler-dot {
+  background: #9dc4ea;
+  box-shadow: 0 0 0 7px rgba(157, 196, 234, 0.18);
+}
+
+.week-axis-card.time-current .week-axis-ruler-dot {
+  background: #3d7cc4;
+  box-shadow: 0 0 0 7px rgba(61, 124, 196, 0.2);
+}
+
+.week-axis-card.time-future .week-axis-ruler-dot {
+  background: rgba(138, 129, 116, 0.52);
+  box-shadow: 0 0 0 7px rgba(138, 129, 116, 0.12);
 }
 
 .material-shelf-grid {

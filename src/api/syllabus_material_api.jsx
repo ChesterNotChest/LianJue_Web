@@ -1,11 +1,12 @@
 import {
-  RAW_MATERIAL_DETAIL_RESPONSES,
-  RAW_MATERIAL_DRAFT_DETAIL_RESPONSES,
-  RAW_MATERIAL_LIST_RESPONSES,
-  RAW_MATERIAL_STATUS_RESPONSES,
-  RAW_TEACHER_DETAIL_RESPONSES,
-  RAW_TEACHER_LIST_RESPONSE,
-  RAW_TEACHER_STATUS_RESPONSES,
+  RAW_GET_MATERIAL_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_MATERIAL_STATUS_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_GET_SYLLABUS_STATUS_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7,
+  RAW_LIST_MATERIALS_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID,
 } from './mock_payloads';
 import { listGraphFiles, listSyllabusFiles } from './file_transmit_api';
 import { getJobLabel, getJobTone, listJobs } from './job_api';
@@ -15,8 +16,8 @@ function cloneData(value) {
 }
 
 function createInitialGraphStore() {
-  const rows = Array.isArray(RAW_TEACHER_LIST_RESPONSE?.syllabuses)
-    ? RAW_TEACHER_LIST_RESPONSE.syllabuses
+  const rows = Array.isArray(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7?.syllabuses)
+    ? RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7.syllabuses
     : [];
 
   return rows
@@ -28,6 +29,32 @@ function createInitialGraphStore() {
 }
 
 let mockGraphStore = createInitialGraphStore();
+let mockUploadedSyllabusIdSeed = Math.max(
+  0,
+  ...((RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7?.syllabuses ?? []).map((row) => row.syllabus_id ?? 0)),
+);
+let mockSyllabusDetailResponseById = cloneData(RAW_GET_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW);
+let mockSyllabusDraftDetailResponseById = cloneData(RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW);
+let mockMaterialDetailResponseById = cloneData(RAW_GET_MATERIAL_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID);
+let mockMaterialDraftDetailResponseById = cloneData(RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID);
+
+function updateManageSyllabusTitle(syllabusId, title) {
+  const rows = RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7?.syllabuses ?? [];
+  const target = rows.find((row) => row.syllabus_id === syllabusId);
+  if (target) {
+    target.title = title;
+  }
+}
+
+function updateMaterialBriefTitle(materialId, title) {
+  Object.values(RAW_LIST_MATERIALS_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID).forEach((response) => {
+    const rows = response?.materials ?? [];
+    const target = rows.find((row) => row.material_id === materialId);
+    if (target) {
+      target.title = title;
+    }
+  });
+}
 
 function parseSyllabusStatusResponse(response) {
   return {
@@ -61,22 +88,11 @@ function parseSyllabusListResponse(response) {
 }
 
 function parseSyllabusDetailResponse(response) {
-  const payload = response?.syllabus ?? {};
-  const syllabus = payload?.syllabus ?? {};
+  return response?.syllabus ?? null;
+}
 
-  return {
-    syllabus: {
-      syllabusId: syllabus.syllabus_id,
-      title: syllabus.title,
-      graphName: syllabus.graph_name,
-      dayOneTime: syllabus.day_one_time,
-      eduCalendarPath: syllabus.edu_calendar_path,
-      draftPath: syllabus.syllabus_draft_path,
-      finalPath: syllabus.syllabus_path,
-    },
-    draft: payload?.draft ?? null,
-    finalData: payload?.final ?? null,
-  };
+function parseSyllabusDraftDetailResponse(response) {
+  return response?.syllabus_draft ?? null;
 }
 
 function parseMaterialListResponse(response) {
@@ -138,6 +154,58 @@ function parseMaterialMutationResponse(response) {
   };
 }
 
+function createSuccessSyllabusMutation(syllabusId) {
+  return {
+    success: true,
+    syllabus: { syllabus_id: syllabusId ?? null },
+    error_message: '',
+    error_code: '',
+  };
+}
+
+function createSuccessMaterialMutation(materialId) {
+  return {
+    success: true,
+    material: { material_id: materialId ?? null },
+    error_message: '',
+    error_code: '',
+  };
+}
+
+function ensureSyllabusDraftJson(value) {
+  return (
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof value.title === 'string'
+    && 'graph_name' in value
+    && Array.isArray(value.period)
+  );
+}
+
+function ensureSyllabusJson(value) {
+  return (
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof value.title === 'string'
+    && 'graph_name' in value
+    && typeof value.day_one === 'string'
+    && Array.isArray(value.period)
+  );
+}
+
+function ensureMaterialJson(value) {
+  return (
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof value.material_title === 'string'
+    && Array.isArray(value.involved_weeks)
+    && Array.isArray(value.questions)
+  );
+}
+
 function mapGraphFiles(graphFiles, jobs) {
   return graphFiles.map((file) => {
     const job = jobs.find((item) => item.fileId === file.fileId) ?? null;
@@ -166,32 +234,36 @@ function mapMaterialShelf(syllabusFiles, graphFiles) {
 }
 
 export async function listSyllabusesRaw() {
-  return cloneData(RAW_TEACHER_LIST_RESPONSE);
+  return cloneData(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7);
 }
 
 export async function getSyllabusDetailRaw(syllabusId) {
-  return cloneData(RAW_TEACHER_DETAIL_RESPONSES[syllabusId]);
+  return cloneData(mockSyllabusDetailResponseById[syllabusId]);
+}
+
+export async function getSyllabusDraftDetailRaw(syllabusId) {
+  return cloneData(mockSyllabusDraftDetailResponseById[syllabusId]);
 }
 
 export async function getSyllabusStatusRaw(syllabusId) {
-  return cloneData(RAW_TEACHER_STATUS_RESPONSES[syllabusId]);
+  return cloneData(RAW_GET_SYLLABUS_STATUS_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW[syllabusId]);
 }
 
 export async function listMaterialsRaw(syllabusId) {
-  return cloneData(RAW_MATERIAL_LIST_RESPONSES[syllabusId] ?? { success: true, materials: [] });
+  return cloneData(RAW_LIST_MATERIALS_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID[syllabusId] ?? { success: true, materials: [] });
 }
 
 export async function getMaterialDraftDetailRaw(materialId) {
-  return cloneData(RAW_MATERIAL_DRAFT_DETAIL_RESPONSES[materialId] ?? { success: true, material: null });
+  return cloneData(mockMaterialDraftDetailResponseById[materialId] ?? { success: true, material: null });
 }
 
 export async function getMaterialDetailRaw(materialId) {
-  return cloneData(RAW_MATERIAL_DETAIL_RESPONSES[materialId] ?? { success: true, material: null });
+  return cloneData(mockMaterialDetailResponseById[materialId] ?? { success: true, material: null });
 }
 
 export async function getMaterialStatusRaw(materialId) {
   return cloneData(
-    RAW_MATERIAL_STATUS_RESPONSES[materialId] ?? {
+    RAW_GET_MATERIAL_STATUS_RESPONSE_BY_MATERIAL_ID[materialId] ?? {
       success: true,
       status: {
         is_material_draft_path_null: true,
@@ -208,7 +280,8 @@ export async function getTeacherDashboardData() {
 
   const syllabuses = await Promise.all(
     syllabusList.map(async (item) => {
-      const detail = parseSyllabusDetailResponse(await getSyllabusDetailRaw(item.syllabusId));
+      const finalData = item.finalPath ? parseSyllabusDetailResponse(await getSyllabusDetailRaw(item.syllabusId)) : null;
+      const draft = item.draftPath ? parseSyllabusDraftDetailResponse(await getSyllabusDraftDetailRaw(item.syllabusId)) : null;
       const status = parseSyllabusStatusResponse(await getSyllabusStatusRaw(item.syllabusId));
       const rawGraphFiles = await listGraphFiles(item.graphId ? [item.graphId] : []);
       const jobs = item.graphId ? await listJobs(item.graphId) : [];
@@ -227,14 +300,14 @@ export async function getTeacherDashboardData() {
 
       return {
         syllabusId: item.syllabusId,
-        title: detail.syllabus.title ?? item.title,
+        title: finalData?.title ?? draft?.title ?? item.title,
         permission: item.permission,
         graphId: item.graphId,
-        graphName: detail.syllabus.graphName ?? item.graphName,
-        dayOneTime: detail.syllabus.dayOneTime ?? item.dayOneTime,
+        graphName: finalData?.graph_name ?? item.graphName,
+        dayOneTime: item.dayOneTime,
         status,
-        draft: detail.draft ?? { period: [] },
-        finalData: detail.finalData ?? { title: detail.syllabus.title ?? item.title, day_one: '', period: [] },
+        draft,
+        finalData,
         graphFiles,
         graphFileCount: graphFiles.filter((file) => !file.job || file.job.status !== 'failed').length,
         syllabusFiles,
@@ -302,50 +375,93 @@ export async function createGraph(payload = {}) {
   return parseGraphMutationResponse(await createGraphRaw(payload));
 }
 
-export async function uploadCalendar(payload = {}) {
+export async function uploadCalendar() {
+  mockUploadedSyllabusIdSeed += 1;
+
   return parseSyllabusMutationResponse({
     success: true,
     file: { file_id: 901 },
-    syllabus: { syllabus_id: payload.syllabusId ?? 3 },
+    syllabus: { syllabus_id: mockUploadedSyllabusIdSeed },
     error_message: '',
     error_code: '',
   });
 }
 
 export async function buildSyllabusDraft(payload = {}) {
-  return parseSyllabusMutationResponse({
-    success: true,
-    syllabus: { syllabus_id: payload.syllabusId ?? null },
-    error_message: '',
-    error_code: '',
-  });
+  return parseSyllabusMutationResponse(createSuccessSyllabusMutation(payload.syllabusId ?? null));
 }
 
 export async function updateSyllabusDraft(payload = {}) {
-  return parseSyllabusMutationResponse({
+  const syllabusId = payload.syllabusId ?? null;
+  const syllabusDraftJson = payload.syllabusDraftJson;
+
+  if (!syllabusId || !ensureSyllabusDraftJson(syllabusDraftJson)) {
+    return parseSyllabusMutationResponse({
+      success: false,
+      syllabus: null,
+      error_message: 'invalid_syllabus_draft_json',
+      error_code: 'invalid_fields',
+    });
+  }
+
+  mockSyllabusDraftDetailResponseById[syllabusId] = {
     success: true,
-    syllabus: { syllabus_id: payload.syllabusId ?? null },
+    syllabus_draft: cloneData(syllabusDraftJson),
     error_message: '',
     error_code: '',
-  });
+  };
+  updateManageSyllabusTitle(syllabusId, syllabusDraftJson.title);
+
+  return parseSyllabusMutationResponse(createSuccessSyllabusMutation(syllabusId));
 }
 
 export async function buildSyllabus(payload = {}) {
-  return parseSyllabusMutationResponse({
-    success: true,
-    syllabus: { syllabus_id: payload.syllabusId ?? null },
-    error_message: '',
-    error_code: '',
-  });
+  const syllabusId = payload.syllabusId ?? null;
+  const draftPayload = mockSyllabusDraftDetailResponseById[syllabusId]?.syllabus_draft ?? null;
+
+  if (syllabusId && draftPayload && Array.isArray(draftPayload.period)) {
+    mockSyllabusDetailResponseById[syllabusId] = {
+      success: true,
+      syllabus: {
+        title: draftPayload.title,
+        day_one: '2026-03-02',
+        graph_name: draftPayload.graph_name,
+        period: draftPayload.period.map((item) => ({
+          ...cloneData(item),
+          original_content: item.content ?? '',
+          enhanced_content: item.content ?? '',
+        })),
+      },
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  return parseSyllabusMutationResponse(createSuccessSyllabusMutation(syllabusId));
 }
 
 export async function updateSyllabus(payload = {}) {
-  return parseSyllabusMutationResponse({
+  const syllabusId = payload.syllabusId ?? null;
+  const syllabusJson = payload.syllabusJson;
+
+  if (!syllabusId || !ensureSyllabusJson(syllabusJson)) {
+    return parseSyllabusMutationResponse({
+      success: false,
+      syllabus: null,
+      error_message: 'invalid_syllabus_json',
+      error_code: 'invalid_fields',
+    });
+  }
+
+  mockSyllabusDetailResponseById[syllabusId] = {
     success: true,
-    syllabus: { syllabus_id: payload.syllabusId ?? null },
+    syllabus: cloneData(syllabusJson),
     error_message: '',
     error_code: '',
-  });
+  };
+  updateManageSyllabusTitle(syllabusId, syllabusJson.title);
+
+  return parseSyllabusMutationResponse(createSuccessSyllabusMutation(syllabusId));
 }
 
 export async function generateMaterialDraft(payload = {}) {
@@ -358,12 +474,27 @@ export async function generateMaterialDraft(payload = {}) {
 }
 
 export async function updateMaterialDraft(payload = {}) {
-  return parseMaterialMutationResponse({
+  const materialId = payload.materialId ?? null;
+  const materialDraftJson = payload.materialDraftJson;
+
+  if (!materialId || !ensureMaterialJson(materialDraftJson)) {
+    return parseMaterialMutationResponse({
+      success: false,
+      material: null,
+      error_message: 'invalid_material_draft_json',
+      error_code: 'invalid_fields',
+    });
+  }
+
+  mockMaterialDraftDetailResponseById[materialId] = {
     success: true,
-    material: { material_id: payload.materialId ?? null },
+    material: cloneData(materialDraftJson),
     error_message: '',
     error_code: '',
-  });
+  };
+  updateMaterialBriefTitle(materialId, materialDraftJson.material_title);
+
+  return parseMaterialMutationResponse(createSuccessMaterialMutation(materialId));
 }
 
 export async function generateFinalMaterial(payload = {}) {
@@ -376,12 +507,27 @@ export async function generateFinalMaterial(payload = {}) {
 }
 
 export async function updateFinalMaterial(payload = {}) {
-  return parseMaterialMutationResponse({
+  const materialId = payload.materialId ?? null;
+  const materialJson = payload.materialJson;
+
+  if (!materialId || !ensureMaterialJson(materialJson)) {
+    return parseMaterialMutationResponse({
+      success: false,
+      material: null,
+      error_message: 'invalid_material_json',
+      error_code: 'invalid_fields',
+    });
+  }
+
+  mockMaterialDetailResponseById[materialId] = {
     success: true,
-    material: { material_id: payload.materialId ?? null },
+    material: cloneData(materialJson),
     error_message: '',
     error_code: '',
-  });
+  };
+  updateMaterialBriefTitle(materialId, materialJson.material_title);
+
+  return parseMaterialMutationResponse(createSuccessMaterialMutation(materialId));
 }
 
 export async function publishMaterial(payload = {}) {
@@ -401,6 +547,7 @@ export {
   parseMaterialListResponse,
   parseMaterialMutationResponse,
   parseMaterialStatusResponse,
+  parseSyllabusDraftDetailResponse,
   parseSyllabusDetailResponse,
   parseSyllabusListResponse,
   parseSyllabusMutationResponse,

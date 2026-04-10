@@ -31,6 +31,25 @@ function pickDefaultWeekIndex(personalSyllabus) {
   );
 }
 
+function getCurrentWeekIndex(dayOneTime, periodLength) {
+  if (!dayOneTime || !periodLength) {
+    return null;
+  }
+
+  const dayOneDate = new Date(dayOneTime);
+  if (Number.isNaN(dayOneDate.getTime())) {
+    return null;
+  }
+
+  const diffMs = Date.now() - dayOneDate.getTime();
+  if (diffMs < 0) {
+    return 1;
+  }
+
+  const weekIndex = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(Math.max(weekIndex, 1), periodLength);
+}
+
 function FileDropzone({ files, onFilesChange, title = '选择文件 / dropbox' }) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -117,6 +136,10 @@ export default function StudentDashboard({ navigate }) {
 
   const active = syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null;
   const weekOptions = useMemo(() => active?.personalSyllabus?.period ?? [], [active?.personalSyllabus]);
+  const currentWeekIndex = useMemo(
+    () => getCurrentWeekIndex(active?.dayOneTime, weekOptions.length),
+    [active?.dayOneTime, weekOptions.length],
+  );
   const disabled = isBooting || !active || !active.isLearning || !active.personalSyllabus;
 
   useEffect(() => {
@@ -171,8 +194,10 @@ export default function StudentDashboard({ navigate }) {
                 patchActive((item) => {
                   item.isLearning = true;
                   item.personalSyllabus ??= {
-                    title: item.title,
-                    day_one_time: item.dayOneTime ?? '',
+                    syllabus_id: item.syllabusId,
+                    user_id: 7,
+                    review_count: 0,
+                    reviewed_at: 0,
                     period: [],
                   };
                   return item;
@@ -225,7 +250,11 @@ export default function StudentDashboard({ navigate }) {
                 </StatusPill>
               </div>
               <DisabledBlock disabled={disabled} message="请先点击“选择学习”初始化 personal_syllabus">
-                <WeekAxis items={active.personalSyllabus?.period ?? []} mode="competance" />
+                <WeekAxis
+                  items={active.personalSyllabus?.period ?? []}
+                  mode="competance"
+                  currentWeek={currentWeekIndex}
+                />
               </DisabledBlock>
             </article>
 
@@ -258,6 +287,7 @@ export default function StudentDashboard({ navigate }) {
 
                           try {
                             const response = await askQuestion({
+                              userId: 7,
                               syllabusId: active.syllabusId,
                               question: questionInput,
                             });
@@ -328,10 +358,10 @@ export default function StudentDashboard({ navigate }) {
                         value={selectedWeekIndex}
                         onChange={(event) => setSelectedWeekIndex(event.target.value)}
                       >
-                        <option value="">请选择 week</option>
+                        <option value="">请选择周次</option>
                         {weekOptions.map((item) => (
                           <option key={item.week_index} value={item.week_index}>
-                            {`Week ${item.week_index}`}
+                            {`第${item.week_index}周`}
                           </option>
                         ))}
                       </select>

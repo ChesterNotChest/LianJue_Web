@@ -17,18 +17,24 @@ const BASE_PERIOD = [
   { week_index: '16', content: '行业案例分析与课程总结。', importance: 'medium' },
 ];
 
-const RAW_SYLLABUS_DRAFT_BIG_DATA = {
-  period: BASE_PERIOD.map((item) => ({ ...item })),
-};
-
-const RAW_SYLLABUS_FINAL_BIG_DATA = {
-  title: '大数据概论',
-  day_one: '2026-03-02',
+const RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA = {
+  title: 'Big Data Overview',
   graph_name: 'RAG',
   period: BASE_PERIOD.map((item) => ({ ...item })),
 };
 
-const RAW_MATERIAL_DRAFT = {
+const RAW_GET_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_BIG_DATA = {
+  title: 'Big Data Overview',
+  day_one: '2026-03-02',
+  graph_name: 'RAG',
+  period: BASE_PERIOD.map((item) => ({
+    ...item,
+    original_content: item.content,
+    enhanced_content: `${item.content} (enhanced for final syllabus editing)`,
+  })),
+};
+
+const RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA = {
   material_title: '大数据概论_20260402223302',
   involved_weeks: [4],
   questions: [
@@ -40,7 +46,7 @@ const RAW_MATERIAL_DRAFT = {
   ],
 };
 
-const RAW_MATERIAL_FINAL = {
+const RAW_GET_MATERIAL_DETAIL_INFO_OUTPUT_JSON_BIG_DATA = {
   material_title: '大数据概论_20260402223302',
   involved_weeks: [4],
   questions: [
@@ -95,15 +101,16 @@ const RAW_MATERIAL_FINAL = {
   ],
 };
 
-const RAW_PERSONAL_SYLLABUS = {
+const RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_FOR_USER_7_SYLLABUS_1 = {
   syllabus_id: 1,
   user_id: 7,
   review_count: 2,
   reviewed_at: 1775600000,
-  period: RAW_SYLLABUS_FINAL_BIG_DATA.period.map((item, index) => ({
+  period: RAW_GET_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_BIG_DATA.period.map((item, index) => ({
     week_index: item.week_index,
-    content: item.content,
-    enhanced_content: item.content,
+    content: item.enhanced_content,
+    enhanced_content: item.enhanced_content,
+    importance: item.importance,
     competance: index === 0 ? 'master' : index <= 2 ? 'normal' : index === 3 ? 'weak' : 'none',
     competance_progress: index === 0 ? 3 : index <= 2 ? 1 : index === 3 ? -2 : 0,
     suggested_competance_list: [],
@@ -111,7 +118,7 @@ const RAW_PERSONAL_SYLLABUS = {
   })),
 };
 
-const RAW_GRAPH_FILE_LIST_RESPONSES = {
+const RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_GRAPH_ID = {
   1: {
     success: true,
     files: [
@@ -132,7 +139,7 @@ const RAW_GRAPH_FILE_LIST_RESPONSES = {
   },
 };
 
-const RAW_JOB_LIST_RESPONSES = {
+const RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID = {
   1: {
     success: true,
     jobs: [
@@ -161,7 +168,7 @@ const RAW_JOB_LIST_RESPONSES = {
   },
 };
 
-const RAW_SYLLABUS_FILE_LIST_RESPONSES = {
+const RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID = {
   1: {
     success: true,
     files: [
@@ -180,7 +187,12 @@ const RAW_SYLLABUS_FILE_LIST_RESPONSES = {
   },
 };
 
-const RAW_TEACHER_LIST_RESPONSE = {
+const RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_REQUEST_FOR_USER_7 = {
+  user_id: 7,
+  manage: true,
+};
+
+const RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7 = {
   success: true,
   syllabuses: [
     {
@@ -210,7 +222,7 @@ const RAW_TEACHER_LIST_RESPONSE = {
   error_code: '',
 };
 
-const RAW_TEACHER_STATUS_RESPONSES = {
+const RAW_GET_SYLLABUS_STATUS_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW = {
   1: {
     success: true,
     status: {
@@ -233,7 +245,7 @@ const RAW_TEACHER_STATUS_RESPONSES = {
   },
 };
 
-const RAW_TEACHER_DETAIL_RESPONSES = {
+/*
   1: {
     success: true,
     syllabus: {
@@ -246,8 +258,8 @@ const RAW_TEACHER_DETAIL_RESPONSES = {
         day_one_time: '2026-03-02T00:00:00',
         graph_name: 'RAG',
       },
-      draft: RAW_SYLLABUS_DRAFT_BIG_DATA,
-      final: RAW_SYLLABUS_FINAL_BIG_DATA,
+      draft: RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+      final: RAW_GET_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
     },
     error_message: '',
     error_code: '',
@@ -270,9 +282,39 @@ const RAW_TEACHER_DETAIL_RESPONSES = {
     error_message: '',
     error_code: '',
   },
+*/
+
+const RAW_GET_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW = {
+  1: {
+    success: true,
+    syllabus: RAW_GET_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+    error_message: '',
+    error_code: '',
+  },
+  2: {
+    success: true,
+    syllabus: null,
+    error_message: '',
+    error_code: '',
+  },
 };
 
-const RAW_MATERIAL_LIST_RESPONSES = {
+const RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW = {
+  1: {
+    success: true,
+    syllabus_draft: RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+    error_message: '',
+    error_code: '',
+  },
+  2: {
+    success: true,
+    syllabus_draft: null,
+    error_message: '',
+    error_code: '',
+  },
+};
+
+const RAW_LIST_MATERIALS_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID = {
   1: {
     success: true,
     materials: [
@@ -296,25 +338,25 @@ const RAW_MATERIAL_LIST_RESPONSES = {
   },
 };
 
-const RAW_MATERIAL_DETAIL_RESPONSES = {
+const RAW_GET_MATERIAL_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID = {
   101: {
     success: true,
-    material: RAW_MATERIAL_FINAL,
+    material: RAW_GET_MATERIAL_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
     error_message: '',
     error_code: '',
   },
 };
 
-const RAW_MATERIAL_DRAFT_DETAIL_RESPONSES = {
+const RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID = {
   101: {
     success: true,
-    material: RAW_MATERIAL_DRAFT,
+    material: RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
     error_message: '',
     error_code: '',
   },
 };
 
-const RAW_MATERIAL_STATUS_RESPONSES = {
+const RAW_GET_MATERIAL_STATUS_RESPONSE_BY_MATERIAL_ID = {
   101: {
     success: true,
     status: {
@@ -326,7 +368,12 @@ const RAW_MATERIAL_STATUS_RESPONSES = {
   },
 };
 
-const RAW_STUDENT_LIST_RESPONSE = {
+const RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_REQUEST_FOR_USER_7 = {
+  user_id: 7,
+  manage: false,
+};
+
+const RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7 = {
   success: true,
   syllabuses: [
     {
@@ -348,10 +395,10 @@ const RAW_STUDENT_LIST_RESPONSE = {
   error_code: '',
 };
 
-const RAW_PERSONAL_SYLLABUS_RESPONSES = {
+const RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7 = {
   1: {
     success: true,
-    syllabus: RAW_PERSONAL_SYLLABUS,
+    syllabus: RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_FOR_USER_7_SYLLABUS_1,
     error_message: '',
     error_code: '',
   },
@@ -363,7 +410,7 @@ const RAW_PERSONAL_SYLLABUS_RESPONSES = {
   },
 };
 
-const RAW_ASK_QUESTION_RESPONSE = {
+const RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1 = {
   success: true,
   answer: 'ETL 负责把原始数据抽取、转换并装载成可分析的结构化信息。按当前教学进度，它对应第 4 周的大数据感知与获取部分。',
   matched_files: [301, 302],
@@ -378,17 +425,25 @@ const RAW_ASK_QUESTION_RESPONSE = {
 };
 
 export {
-  RAW_ASK_QUESTION_RESPONSE,
-  RAW_GRAPH_FILE_LIST_RESPONSES,
-  RAW_JOB_LIST_RESPONSES,
-  RAW_MATERIAL_DETAIL_RESPONSES,
-  RAW_MATERIAL_DRAFT_DETAIL_RESPONSES,
-  RAW_MATERIAL_LIST_RESPONSES,
-  RAW_MATERIAL_STATUS_RESPONSES,
-  RAW_PERSONAL_SYLLABUS_RESPONSES,
-  RAW_STUDENT_LIST_RESPONSE,
-  RAW_SYLLABUS_FILE_LIST_RESPONSES,
-  RAW_TEACHER_DETAIL_RESPONSES,
-  RAW_TEACHER_LIST_RESPONSE,
-  RAW_TEACHER_STATUS_RESPONSES,
+  RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1,
+  RAW_GET_MATERIAL_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+  RAW_GET_MATERIAL_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+  RAW_GET_MATERIAL_DRAFT_DETAIL_INFO_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_MATERIAL_STATUS_RESPONSE_BY_MATERIAL_ID,
+  RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_FOR_USER_7_SYLLABUS_1,
+  RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7,
+  RAW_GET_SYLLABUS_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+  RAW_GET_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_OUTPUT_JSON_BIG_DATA,
+  RAW_GET_SYLLABUS_DRAFT_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_GET_SYLLABUS_STATUS_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7_MANAGE_VIEW,
+  RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_GRAPH_ID,
+  RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID,
+  RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_REQUEST_FOR_USER_7,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_REQUEST_FOR_USER_7,
+  RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_MANAGE_RESPONSE_FOR_USER_7,
+  RAW_LIST_MATERIALS_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID,
 };

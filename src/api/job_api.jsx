@@ -1,4 +1,4 @@
-import { RAW_JOB_LIST_RESPONSES } from './mock_payloads';
+import { RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID } from './mock_payloads';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -56,7 +56,7 @@ function getJobLabel(job) {
 
 export async function listJobsRaw(graphId) {
   return cloneData(
-    RAW_JOB_LIST_RESPONSES[graphId] ?? {
+    RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID[graphId] ?? {
       success: true,
       jobs: [],
       error_message: '',

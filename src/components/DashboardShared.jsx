@@ -107,6 +107,53 @@ function DisabledBlock({ disabled, message, children }) {
   );
 }
 
+function getCompetanceLabel(level) {
+  switch (level) {
+    case 'weak':
+      return '待巩固';
+    case 'normal':
+      return '基本达标';
+    case 'master':
+      return '熟练掌握';
+    case 'none':
+      return '尚未开始';
+    default:
+      return level ?? '';
+  }
+}
+
+function getTimelineState(weekIndex, currentWeek) {
+  if (currentWeek == null) {
+    return 'future';
+  }
+
+  const normalizedWeek = Number(weekIndex);
+  const normalizedCurrentWeek = Number(currentWeek);
+
+  if (normalizedWeek < normalizedCurrentWeek) {
+    return 'past';
+  }
+
+  if (normalizedWeek === normalizedCurrentWeek) {
+    return 'current';
+  }
+
+  return 'future';
+}
+
+function getImportanceLabel(level) {
+  switch (level) {
+    case 'high':
+      return '难';
+    case 'medium':
+      return '中';
+    case 'low':
+      return '易';
+    default:
+      return '';
+  }
+}
+
 function WeekAxis({ items, mode = 'importance', currentWeek = null, renderContent }) {
   const list = Array.isArray(items) ? items : [];
 
@@ -119,15 +166,29 @@ function WeekAxis({ items, mode = 'importance', currentWeek = null, renderConten
       <div className="week-axis-track">
         {list.map((item) => {
           const tone = mode === 'competance' ? item.competance : item.importance ?? 'medium';
-          const isCurrent = currentWeek && Number(item.week_index) === Number(currentWeek);
+          const isCurrent = currentWeek != null && Number(item.week_index) === Number(currentWeek);
           const weekLabel = `第${item.week_index}周`;
+          const timelineState = getTimelineState(item.week_index, currentWeek);
+          const importanceLabel = getImportanceLabel(item.importance);
 
           return (
-            <article key={item.week_index} className={['week-axis-card', `tone-${tone}`, isCurrent ? 'is-current' : ''].filter(Boolean).join(' ')}>
+            <article
+              key={item.week_index}
+              className={['week-axis-card', `tone-${tone}`, `time-${timelineState}`, isCurrent ? 'is-current' : ''].filter(Boolean).join(' ')}
+            >
               <div className="week-axis-card-head">
                 <span className="week-axis-index">{weekLabel}</span>
                 {mode === 'competance' ? (
-                  <StatusPill tone={tone === 'master' ? 'success' : tone === 'weak' ? 'danger' : tone === 'none' ? 'neutral' : 'warning'}>{tone}</StatusPill>
+                  <div className="week-axis-status-stack">
+                    <StatusPill tone={tone === 'master' ? 'success' : tone === 'weak' ? 'danger' : tone === 'none' ? 'neutral' : 'warning'}>
+                      {getCompetanceLabel(tone)}
+                    </StatusPill>
+                    {importanceLabel ? (
+                      <StatusPill tone={item.importance === 'high' ? 'danger' : item.importance === 'medium' ? 'warning' : 'neutral'}>
+                        {importanceLabel}
+                      </StatusPill>
+                    ) : null}
+                  </div>
                 ) : (
                   <StatusPill tone={tone === 'high' ? 'danger' : tone === 'medium' ? 'warning' : 'neutral'}>{tone}</StatusPill>
                 )}
@@ -136,7 +197,7 @@ function WeekAxis({ items, mode = 'importance', currentWeek = null, renderConten
                 <span className="week-axis-ruler-label">{weekLabel}</span>
                 <span className="week-axis-ruler-dot" />
               </div>
-              {renderContent ? renderContent(item) : <p className="week-axis-content">{item.content ?? item.enhanced_content ?? ''}</p>}
+              {renderContent ? renderContent(item) : <p className="week-axis-content">{item.enhanced_content ?? item.content ?? ''}</p>}
               {mode === 'competance'
                 ? <small className="week-axis-foot">{`progress ${item.competance_progress ?? 0}`}</small>
                 : item.day_one ? <small className="week-axis-foot">{`day_one ${item.day_one}`}</small> : null}
@@ -164,7 +225,7 @@ function MaterialShelf({ items, emptyText = '暂无材料。', rows = 2 }) {
             </div>
             <small>
               {item.source}
-              {item.weekLabel ? ` · ${item.weekLabel}` : ''}
+              {item.weekLabel ? ` / ${item.weekLabel}` : ''}
             </small>
           </article>
         ))}

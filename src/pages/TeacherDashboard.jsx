@@ -34,7 +34,33 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createEmptySyllabus(nextId) {
+function getCurrentWeekIndex(dayOneValue, periodLength) {
+  if (!dayOneValue || !periodLength) {
+    return null;
+  }
+
+  let dayOneDate = null;
+  if (typeof dayOneValue === 'string' && /^\d{1,2}-\d{1,2}$/.test(dayOneValue)) {
+    const [month, day] = dayOneValue.split('-').map(Number);
+    dayOneDate = new Date(new Date().getFullYear(), month - 1, day);
+  } else {
+    dayOneDate = new Date(dayOneValue);
+  }
+
+  if (Number.isNaN(dayOneDate?.getTime?.())) {
+    return null;
+  }
+
+  const diffMs = Date.now() - dayOneDate.getTime();
+  if (diffMs < 0) {
+    return 1;
+  }
+
+  const weekIndex = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(Math.max(weekIndex, 1), periodLength);
+}
+
+function createEmptySyllabus(nextId = null) {
   return {
     syllabusId: nextId,
     title: '新的教学大纲',
@@ -47,8 +73,8 @@ function createEmptySyllabus(nextId) {
       isDraftMissing: true,
       isFinalMissing: true,
     },
-    draft: { period: [] },
-    finalData: { title: '新的教学大纲', day_one: '', period: [] },
+    draft: { title: '新的教学大纲', graph_name: '', period: [] },
+    finalData: { title: '新的教学大纲', day_one: '', graph_name: '', period: [] },
     graphFiles: [],
     graphFileCount: 0,
     syllabusFiles: [],
@@ -66,8 +92,60 @@ function createEmptyDraftPeriod() {
   }));
 }
 
+function createFinalPeriodFromDraft(period = []) {
+  return period.map((item) => ({
+    week_index: item.week_index,
+    content: item.content ?? '',
+    original_content: item.content ?? '',
+    enhanced_content: item.content ?? '',
+    importance: item.importance ?? 'medium',
+    day_one: item.day_one ?? '',
+  }));
+}
+
+function normalizeFinalPeriod(period = [], draftPeriod = []) {
+  if (Array.isArray(period) && period.length) {
+    return period.map((item, index) => {
+      const fallback = draftPeriod.find((entry) => entry.week_index === item.week_index) ?? draftPeriod[index] ?? {};
+      const originalContent = item.original_content ?? item.content ?? fallback.content ?? '';
+
+      return {
+        ...cloneData(item),
+        content: item.content ?? originalContent,
+        original_content: originalContent,
+        enhanced_content: item.enhanced_content ?? originalContent,
+        importance: item.importance ?? fallback.importance ?? 'medium',
+        day_one: item.day_one ?? fallback.day_one ?? '',
+      };
+    });
+  }
+
+  return createFinalPeriodFromDraft(draftPeriod);
+}
+
+function buildDraftJson(state) {
+  return {
+    title: state.draftTitle,
+    graph_name: state.selectedGraphName || state.syllabus.graphName || '',
+    period: cloneData(state.draftPeriod),
+  };
+}
+
+function buildFinalJson(state) {
+  return {
+    title: state.finalTitle,
+    day_one: state.finalDayOne,
+    graph_name: state.selectedGraphName || state.syllabus.graphName || '',
+    period: cloneData(state.finalPeriod),
+  };
+}
+
 function isSingleQuestion(question) {
   return String(question?.type ?? '').toLowerCase() === 'single';
+}
+
+function isJudgeQuestion(question) {
+  return String(question?.type ?? '').toLowerCase() === 'judge';
 }
 
 function ensureSingleOptions(question) {
@@ -89,21 +167,29 @@ function hydrateFinalQuestion(question) {
     next.answer = typeof next.answer === 'string' ? next.answer : '';
   }
 
+  if (isJudgeQuestion(next) && typeof next.answer !== 'boolean') {
+    next.answer = Boolean(next.answer);
+  }
+
   return next;
 }
 
 function createBuildState(active, graphOptions = []) {
+  const draftPeriod = active.draft?.period?.length ? cloneData(active.draft.period) : createEmptyDraftPeriod();
+
   return {
     open: true,
+    syllabus: cloneData(active),
     step: active.status.isFinalMissing
       ? (active.status.isDraftMissing ? (active.status.isEduCalendarMissing ? 0 : 1) : 2)
       : 4,
     busy: '',
-    draftPeriod: active.draft?.period?.length ? cloneData(active.draft.period) : createEmptyDraftPeriod(),
+    draftPeriod,
     draftTitle: active.title,
     draftDayOne: active.finalData?.day_one ?? '',
     finalTitle: active.finalData?.title ?? active.title,
     finalDayOne: active.finalData?.day_one ?? '',
+    finalPeriod: normalizeFinalPeriod(active.finalData?.period ?? [], draftPeriod),
     selectedGraphName: active.graphName ?? graphOptions.find((item) => item.graphId === active.graphId)?.graphName ?? '',
     newGraphName: '',
     selectedGraphId: active.graphId ?? '',
@@ -160,10 +246,11 @@ function getMaterialShelfItems(materialDrafts) {
   });
 }
 
-function DraftEditorAxis({ items, onChange }) {
+function DraftEditorAxis({ items, currentWeek, onChange }) {
   return (
     <WeekAxis
       items={items}
+      currentWeek={currentWeek}
       renderContent={(item) => (
         <textarea
           className="week-axis-input"
@@ -171,6 +258,32 @@ function DraftEditorAxis({ items, onChange }) {
           value={item.content}
           onChange={(event) => onChange(item.week_index, event.target.value)}
         />
+      )}
+    />
+  );
+}
+
+function FinalEditorAxis({ items, currentWeek, onChange }) {
+  return (
+    <WeekAxis
+      items={items}
+      currentWeek={currentWeek}
+      renderContent={(item) => (
+        <div className="week-axis-editor-stack">
+          <label className="field">
+            <span>original_content</span>
+            <div className="week-axis-readonly">{item.original_content ?? item.content ?? ''}</div>
+          </label>
+          <label className="field">
+            <span>enhanced_content</span>
+            <textarea
+              className="week-axis-input"
+              rows="6"
+              value={item.enhanced_content ?? ''}
+              onChange={(event) => onChange(item.week_index, event.target.value)}
+            />
+          </label>
+        </div>
       )}
     />
   );
@@ -244,6 +357,8 @@ function BuildSyllabusModal({
   syllabus,
   state,
   setState,
+  draftCurrentWeek,
+  finalCurrentWeek,
   graphOptions,
   onClose,
   onCreateGraph,
@@ -402,6 +517,7 @@ function BuildSyllabusModal({
           </div>
           <DraftEditorAxis
             items={state.draftPeriod}
+            currentWeek={draftCurrentWeek}
             onChange={(weekIndex, value) => {
               const next = cloneData(state.draftPeriod);
               const target = next.find((item) => item.week_index === weekIndex);
@@ -469,7 +585,16 @@ function BuildSyllabusModal({
               />
             </label>
           </div>
-          <WeekAxis items={state.draftPeriod} />
+          <FinalEditorAxis
+            items={state.finalPeriod}
+            currentWeek={finalCurrentWeek}
+            onChange={(weekIndex, value) => {
+              const next = cloneData(state.finalPeriod);
+              const target = next.find((item) => item.week_index === weekIndex);
+              if (target) target.enhanced_content = value;
+              setState((current) => ({ ...current, finalPeriod: next }));
+            }}
+          />
           <div className="tile-actions">
             <Button variant="primary" onClick={onSaveFinal}>保存</Button>
             <Button
@@ -724,6 +849,19 @@ function MaterialModal({
                         <option key={key} value={key}>{key}</option>
                       ))}
                     </select>
+                  ) : isJudgeQuestion(question) ? (
+                    <select
+                      className="select-field"
+                      value={String(Boolean(question.answer))}
+                      onChange={(event) => {
+                        const next = cloneData(state.finalQuestions);
+                        next[index].answer = event.target.value === 'true';
+                        setState((current) => ({ ...current, finalQuestions: next }));
+                      }}
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
                   ) : (
                     <input
                       value={String(question.answer ?? '')}
@@ -734,6 +872,18 @@ function MaterialModal({
                       }}
                     />
                   )}
+                </label>
+                <label className="field">
+                  <span>reason</span>
+                  <textarea
+                    rows="3"
+                    value={question.reason ?? ''}
+                    onChange={(event) => {
+                      const next = cloneData(state.finalQuestions);
+                      next[index].reason = event.target.value;
+                      setState((current) => ({ ...current, finalQuestions: next }));
+                    }}
+                  />
                 </label>
               </article>
             ))}
@@ -826,6 +976,19 @@ export default function TeacherDashboard({ navigate }) {
     () => syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null,
     [activeId, syllabuses],
   );
+  const buildTarget = buildModal.open ? (buildModal.syllabus ?? active) : null;
+  const activeCurrentWeek = useMemo(
+    () => getCurrentWeekIndex(active?.dayOneTime ?? active?.finalData?.day_one, active?.finalData?.period?.length ?? 0),
+    [active?.dayOneTime, active?.finalData?.day_one, active?.finalData?.period],
+  );
+  const buildDraftCurrentWeek = useMemo(
+    () => getCurrentWeekIndex(buildModal.draftDayOne || buildTarget?.dayOneTime, buildModal.draftPeriod?.length ?? 0),
+    [buildModal.draftDayOne, buildModal.draftPeriod, buildTarget?.dayOneTime],
+  );
+  const buildFinalCurrentWeek = useMemo(
+    () => getCurrentWeekIndex(buildModal.finalDayOne || buildTarget?.dayOneTime, buildModal.finalPeriod?.length ?? 0),
+    [buildModal.finalDayOne, buildModal.finalPeriod, buildTarget?.dayOneTime],
+  );
   const weakKnowledge = active ? active.graphFileCount <= 2 : true;
   const overviewDisabled = isBooting || !active || active.status.isEduCalendarMissing || weakKnowledge;
   const materialDisabled = isBooting || !active;
@@ -841,6 +1004,12 @@ export default function TeacherDashboard({ navigate }) {
     );
   };
 
+  const patchSyllabusById = (syllabusId, updater) => {
+    setSyllabuses((current) =>
+      current.map((item) => (item.syllabusId === syllabusId ? updater(cloneData(item)) : item)),
+    );
+  };
+
   const switchSyllabus = (offset) => {
     if (!syllabuses.length) return;
     const currentIndex = syllabuses.findIndex((item) => item.syllabusId === activeId);
@@ -852,12 +1021,8 @@ export default function TeacherDashboard({ navigate }) {
   };
 
   const createNewSyllabus = () => {
-    const nextId = Math.max(0, ...syllabuses.map((item) => item.syllabusId)) + 1;
-    const next = createEmptySyllabus(nextId);
-    setSyllabuses((current) => [...current, next]);
-    setActiveId(nextId);
     setMaterialUploadFiles([]);
-    setBuildModal(createBuildState(next, graphOptions));
+    setBuildModal(createBuildState(createEmptySyllabus(), graphOptions));
   };
 
   const softRefreshGraphs = async (nextSelectedGraphId = '') => {
@@ -915,7 +1080,7 @@ export default function TeacherDashboard({ navigate }) {
                   disabled={overviewDisabled}
                   message={weakKnowledge ? '知识来源过少' : '等待数据加载或教学日历上传'}
                 >
-                  <WeekAxis items={active.finalData.period} />
+                  <WeekAxis items={active.finalData?.period ?? []} currentWeek={activeCurrentWeek} />
                 </DisabledBlock>
               </article>
 
@@ -1013,11 +1178,13 @@ export default function TeacherDashboard({ navigate }) {
         </section>
       </MainLayout>
 
-      {buildModal.open && active ? (
+      {buildModal.open && buildTarget ? (
         <BuildSyllabusModal
-          syllabus={active}
+          syllabus={buildTarget}
           state={buildModal}
           setState={setBuildModal}
+          draftCurrentWeek={buildDraftCurrentWeek}
+          finalCurrentWeek={buildFinalCurrentWeek}
           graphOptions={graphOptions}
           onClose={() => setBuildModal({ open: false })}
           onCreateGraph={async () => {
@@ -1045,19 +1212,44 @@ export default function TeacherDashboard({ navigate }) {
             setBuildModal((current) => ({ ...current, busy: 'upload' }));
             setError('');
             try {
-              await uploadCalendar({
-                syllabusId: active.syllabusId,
+              const response = await uploadCalendar({
                 graphId: buildModal.selectedGraphId,
               });
+              if (!response.success || !response.syllabusId) {
+                throw new Error(response.errorMessage || '上传失败');
+              }
               const selectedGraph = graphOptions.find((item) => item.graphId === buildModal.selectedGraphId);
-              patchActive((item) => {
-                item.status.isEduCalendarMissing = false;
-                item.graphId = buildModal.selectedGraphId || item.graphId;
-                item.graphName = selectedGraph?.graphName ?? item.graphName;
-                return item;
+              const nextSyllabus = {
+                ...cloneData(buildTarget),
+                syllabusId: response.syllabusId,
+                graphId: buildModal.selectedGraphId || buildTarget.graphId,
+                graphName: selectedGraph?.graphName ?? buildTarget.graphName,
+                status: {
+                  ...buildTarget.status,
+                  isEduCalendarMissing: false,
+                },
+              };
+              setSyllabuses((current) => {
+                const next = [...current];
+                const currentIndex = buildTarget.syllabusId == null
+                  ? -1
+                  : next.findIndex((item) => item.syllabusId === buildTarget.syllabusId);
+                const uploadedIndex = next.findIndex((item) => item.syllabusId === response.syllabusId);
+
+                if (currentIndex >= 0) {
+                  next[currentIndex] = nextSyllabus;
+                } else if (uploadedIndex >= 0) {
+                  next[uploadedIndex] = nextSyllabus;
+                } else {
+                  next.push(nextSyllabus);
+                }
+
+                return next;
               });
+              setActiveId(response.syllabusId);
               setBuildModal((current) => ({
                 ...current,
+                syllabus: nextSyllabus,
                 busy: '',
                 step: 1,
                 selectedGraphName: selectedGraph?.graphName ?? current.selectedGraphName,
@@ -1073,17 +1265,32 @@ export default function TeacherDashboard({ navigate }) {
             setError('');
             try {
               await buildSyllabusDraft({
-                syllabusId: active.syllabusId,
-                graphId: buildModal.selectedGraphId || active.graphId,
+                syllabusId: buildTarget.syllabusId,
+                graphId: buildModal.selectedGraphId || buildTarget.graphId,
               });
-              patchActive((item) => {
+              patchSyllabusById(buildTarget.syllabusId, (item) => {
                 item.status.isDraftMissing = false;
-                item.draft.period = cloneData(buildModal.draftPeriod);
+                item.draft = buildDraftJson(buildModal);
                 item.graphId = buildModal.selectedGraphId || item.graphId;
                 item.graphName = buildModal.selectedGraphName || item.graphName;
                 return item;
               });
-              setBuildModal((current) => ({ ...current, busy: '', step: 2 }));
+              setBuildModal((current) => ({
+                ...current,
+                syllabus: {
+                  ...current.syllabus,
+                  status: {
+                    ...current.syllabus.status,
+                    isDraftMissing: false,
+                  },
+                  draft: buildDraftJson(current),
+                  graphId: current.selectedGraphId || current.syllabus.graphId,
+                  graphName: current.selectedGraphName || current.syllabus.graphName,
+                },
+                finalPeriod: createFinalPeriodFromDraft(current.draftPeriod),
+                busy: '',
+                step: 2,
+              }));
             } catch (actionError) {
               setBuildModal((current) => ({ ...current, busy: '' }));
               setError(actionError instanceof Error ? actionError.message : '生成草稿失败');
@@ -1093,18 +1300,24 @@ export default function TeacherDashboard({ navigate }) {
             setError('');
             try {
               await updateSyllabusDraft({
-                syllabusId: active.syllabusId,
-                period: buildModal.draftPeriod,
+                syllabusId: buildTarget.syllabusId,
+                syllabusDraftJson: buildDraftJson(buildModal),
               });
-              patchActive((item) => {
+              patchSyllabusById(buildTarget.syllabusId, (item) => {
                 item.title = buildModal.draftTitle;
-                item.draft.period = cloneData(buildModal.draftPeriod);
+                item.draft = buildDraftJson(buildModal);
                 return item;
               });
               setBuildModal((current) => ({
                 ...current,
+                syllabus: {
+                  ...current.syllabus,
+                  title: current.draftTitle,
+                  draft: buildDraftJson(current),
+                },
                 finalTitle: current.draftTitle,
                 finalDayOne: current.draftDayOne,
+                finalPeriod: createFinalPeriodFromDraft(current.draftPeriod),
                 step: 3,
               }));
             } catch (actionError) {
@@ -1116,23 +1329,47 @@ export default function TeacherDashboard({ navigate }) {
             setError('');
             try {
               const selectedGraph = graphOptions.find(
-                (item) => item.graphId === (buildModal.selectedGraphId || active.graphId),
+                (item) => item.graphId === (buildModal.selectedGraphId || buildTarget.graphId),
               );
               await buildSyllabus({
-                syllabusId: active.syllabusId,
-                graphName: selectedGraph?.graphName ?? active.graphName,
+                syllabusId: buildTarget.syllabusId,
               });
-              patchActive((item) => {
+              patchSyllabusById(buildTarget.syllabusId, (item) => {
+                const nextFinalPeriod = createFinalPeriodFromDraft(buildModal.draftPeriod);
                 item.status.isFinalMissing = false;
                 item.graphName = selectedGraph?.graphName ?? item.graphName;
                 item.finalData = {
                   title: buildModal.draftTitle,
                   day_one: buildModal.draftDayOne,
-                  period: cloneData(buildModal.draftPeriod),
+                  graph_name: selectedGraph?.graphName ?? item.graphName ?? '',
+                  period: nextFinalPeriod,
                 };
                 return item;
               });
-              setBuildModal((current) => ({ ...current, busy: '', step: 4 }));
+              setBuildModal((current) => {
+                const nextFinalPeriod = createFinalPeriodFromDraft(current.draftPeriod);
+
+                return {
+                  ...current,
+                  syllabus: {
+                    ...current.syllabus,
+                    graphName: selectedGraph?.graphName ?? current.syllabus.graphName,
+                    status: {
+                      ...current.syllabus.status,
+                      isFinalMissing: false,
+                    },
+                    finalData: {
+                      title: current.draftTitle,
+                      day_one: current.draftDayOne,
+                      graph_name: selectedGraph?.graphName ?? current.syllabus.graphName ?? '',
+                      period: nextFinalPeriod,
+                    },
+                  },
+                  finalPeriod: nextFinalPeriod,
+                  busy: '',
+                  step: 4,
+                };
+              });
             } catch (actionError) {
               setBuildModal((current) => ({ ...current, busy: '' }));
               setError(actionError instanceof Error ? actionError.message : '生成终稿失败');
@@ -1142,21 +1379,23 @@ export default function TeacherDashboard({ navigate }) {
             setError('');
             try {
               await updateSyllabus({
-                syllabusId: active.syllabusId,
-                title: buildModal.finalTitle,
-                dayOne: buildModal.finalDayOne,
+                syllabusId: buildTarget.syllabusId,
+                syllabusJson: buildFinalJson(buildModal),
               });
-              patchActive((item) => {
+              patchSyllabusById(buildTarget.syllabusId, (item) => {
                 item.title = buildModal.finalTitle;
-                item.finalData = {
-                  ...item.finalData,
-                  title: buildModal.finalTitle,
-                  day_one: buildModal.finalDayOne,
-                  period: cloneData(buildModal.draftPeriod),
-                };
+                item.finalData = buildFinalJson(buildModal);
                 return item;
               });
-              setBuildModal((current) => ({ ...current, step: 5 }));
+              setBuildModal((current) => ({
+                ...current,
+                syllabus: {
+                  ...current.syllabus,
+                  title: current.finalTitle,
+                  finalData: buildFinalJson(current),
+                },
+                step: 5,
+              }));
             } catch (actionError) {
               setError(actionError instanceof Error ? actionError.message : '保存终稿失败');
             }
@@ -1191,8 +1430,11 @@ export default function TeacherDashboard({ navigate }) {
             try {
               await updateMaterialDraft({
                 materialId: materialModal.materialId,
-                materialTitle: materialModal.draftTitle,
-                involvedWeeks: materialModal.involvedWeeks,
+                materialDraftJson: {
+                  material_title: materialModal.draftTitle,
+                  involved_weeks: cloneData(materialModal.involvedWeeks),
+                  questions: cloneData(materialModal.draftQuestions),
+                },
               });
               patchActive((item) => {
                 const target = item.materialDrafts.find(
@@ -1253,7 +1495,14 @@ export default function TeacherDashboard({ navigate }) {
           onSaveFinal={async () => {
             setError('');
             try {
-              await updateFinalMaterial({ materialId: materialModal.materialId });
+              await updateFinalMaterial({
+                materialId: materialModal.materialId,
+                materialJson: {
+                  material_title: materialModal.draftTitle,
+                  involved_weeks: cloneData(materialModal.involvedWeeks),
+                  questions: cloneData(materialModal.finalQuestions),
+                },
+              });
               patchActive((item) => {
                 const target = item.materialDrafts.find(
                   (draft) => draft.materialId === materialModal.materialId,

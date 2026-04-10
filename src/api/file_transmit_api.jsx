@@ -1,4 +1,7 @@
-import { RAW_GRAPH_FILE_LIST_RESPONSES, RAW_SYLLABUS_FILE_LIST_RESPONSES } from './mock_payloads';
+import {
+  RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_GRAPH_ID,
+  RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID,
+} from './mock_payloads';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -31,11 +34,11 @@ function parseFileListResponse(response) {
 }
 
 export async function listGraphFilesRaw(graphIdList = []) {
-  return cloneData(mergeFileResponses(RAW_GRAPH_FILE_LIST_RESPONSES, graphIdList));
+  return cloneData(mergeFileResponses(RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_GRAPH_ID, graphIdList));
 }
 
 export async function listSyllabusFilesRaw(syllabusIdList = []) {
-  return cloneData(mergeFileResponses(RAW_SYLLABUS_FILE_LIST_RESPONSES, syllabusIdList));
+  return cloneData(mergeFileResponses(RAW_LIST_ALL_FILES_BRIEF_INFO_RESPONSE_BY_SYLLABUS_ID, syllabusIdList));
 }
 
 export async function listGraphFiles(graphIdList = []) {
