@@ -4,6 +4,7 @@ import {
   Button,
   DisabledBlock,
   EmptyState,
+  LoadingPlaceholder,
   MaterialShelf,
   StatusPill,
   SyllabusSwitcher,
@@ -11,10 +12,12 @@ import {
 } from '../components/DashboardShared';
 import {
   askQuestion,
+  getPersonalSyllabus,
   getStudentDashboardData,
   initPersonalSyllabus,
   updatePersonalSyllabus,
 } from '../api/learning_api';
+import { getCurrentUserId } from '../api/session';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -80,9 +83,7 @@ function FileDropzone({ files, onFilesChange, title = '选择文件 / dropbox' }
       <div className="file-dropzone-copy">
         <strong>{title}</strong>
         <small>
-          {files.length
-            ? files.map((file) => file.name).join(' / ')
-            : '支持点击选择或拖拽到这里'}
+          {files.length ? files.map((file) => file.name).join(' / ') : '支持点击选择或拖拽到这里'}
         </small>
       </div>
     </label>
@@ -103,17 +104,27 @@ export default function StudentDashboard({ navigate }) {
   const [studyHours, setStudyHours] = useState('2');
   const [selectedWeekIndex, setSelectedWeekIndex] = useState('');
   const [studyRecordFiles, setStudyRecordFiles] = useState([]);
+  const [expandedTimelineWeekId, setExpandedTimelineWeekId] = useState(null);
+  const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      if (!getCurrentUserId()) {
+        navigate('/login');
+        setIsBooting(false);
+        return;
+      }
+
       setIsBooting(true);
       setError('');
 
       try {
         const response = await getStudentDashboardData();
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setSyllabuses(response.syllabuses);
         setActiveId(response.syllabuses[0]?.syllabusId ?? null);
       } catch (loadError) {
@@ -132,7 +143,7 @@ export default function StudentDashboard({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [navigate]);
 
   const active = syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null;
   const weekOptions = useMemo(() => active?.personalSyllabus?.period ?? [], [active?.personalSyllabus]);
@@ -141,6 +152,8 @@ export default function StudentDashboard({ navigate }) {
     [active?.dayOneTime, weekOptions.length],
   );
   const disabled = isBooting || !active || !active.isLearning || !active.personalSyllabus;
+  const showStudentShell = Boolean(active) || isBooting;
+  const isStudentLoading = isBooting && !active;
 
   useEffect(() => {
     if (!weekOptions.length) {
@@ -154,14 +167,22 @@ export default function StudentDashboard({ navigate }) {
     }
   }, [active?.personalSyllabus, selectedWeekIndex, weekOptions]);
 
+  useEffect(() => {
+    setExpandedTimelineWeekId(null);
+    setIsAnswerExpanded(false);
+  }, [activeId]);
+
   const patchActive = (updater) => {
-    setSyllabuses((current) =>
-      current.map((item) => (item.syllabusId === activeId ? updater(cloneData(item)) : item)),
-    );
+    setSyllabuses((current) => current.map((item) => (
+      item.syllabusId === activeId ? updater(cloneData(item)) : item
+    )));
   };
 
   const switchSyllabus = (offset) => {
-    if (!syllabuses.length) return;
+    if (!syllabuses.length) {
+      return;
+    }
+
     const currentIndex = syllabuses.findIndex((item) => item.syllabusId === activeId);
     const nextIndex = (currentIndex + offset + syllabuses.length) % syllabuses.length;
     setActiveId(syllabuses[nextIndex].syllabusId);
@@ -185,17 +206,22 @@ export default function StudentDashboard({ navigate }) {
             variant="primary"
             disabled={!active || initBusy}
             onClick={async () => {
-              if (!active) return;
+              if (!active) {
+                return;
+              }
+
               setInitBusy(true);
               setError('');
 
               try {
-                await initPersonalSyllabus({ userId: 7, syllabusId: active.syllabusId });
+                const currentUserId = getCurrentUserId();
+                await initPersonalSyllabus({ syllabusId: active.syllabusId });
+                const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
                 patchActive((item) => {
                   item.isLearning = true;
-                  item.personalSyllabus ??= {
+                  item.personalSyllabus = personalSyllabus ?? item.personalSyllabus ?? {
                     syllabus_id: item.syllabusId,
-                    user_id: 7,
+                    user_id: currentUserId,
                     review_count: 0,
                     reviewed_at: 0,
                     period: [],
@@ -231,7 +257,7 @@ export default function StudentDashboard({ navigate }) {
                 {active.isLearning && active.personalSyllabus ? 'personal_syllabus 已就绪' : '待初始化'}
               </StatusPill>
               <StatusPill tone={questionAsked ? 'success' : 'neutral'}>
-                {questionAsked ? 'AI 推荐' : 'syllabus-file'}
+                {questionAsked ? 'AI 推荐' : '默认推荐'}
               </StatusPill>
             </div>
           ) : null}
@@ -240,93 +266,121 @@ export default function StudentDashboard({ navigate }) {
         {error ? <EmptyState>{error}</EmptyState> : null}
         {!error && !active && !isBooting ? <EmptyState>暂无教学大纲。</EmptyState> : null}
 
-        {active ? (
+        {showStudentShell ? (
           <section className="dashboard-grid dashboard-grid-student">
             <article className="tile-card tile-teal tile-span-full">
               <div className="tile-card-head">
                 <h3>个人教学大纲</h3>
-                <StatusPill tone={disabled ? 'warning' : 'success'}>
-                  {disabled ? '待初始化' : '可交互'}
-                </StatusPill>
-              </div>
-              <DisabledBlock disabled={disabled} message="请先点击“选择学习”初始化 personal_syllabus">
-                <WeekAxis
-                  items={active.personalSyllabus?.period ?? []}
-                  mode="competance"
-                  currentWeek={currentWeekIndex}
-                />
-              </DisabledBlock>
-            </article>
-
-            <article className="tile-card tile-blue tile-half">
-              <div className="tile-card-head">
-                <h3>提问</h3>
-                <StatusPill tone={questionAsked ? 'success' : 'neutral'}>
-                  {questionAsked ? '已提问' : '待提问'}
-                </StatusPill>
-              </div>
-              <DisabledBlock disabled={disabled} message="请先选择学习">
-                <div className="question-grid">
-                  <section className="response-panel">
-                    <label className="field">
-                      <span>问题</span>
-                      <textarea
-                        rows="4"
-                        value={questionInput}
-                        placeholder="例如：ETL 在这里具体负责什么？"
-                        onChange={(event) => setQuestionInput(event.target.value)}
-                      />
-                    </label>
-                    <div className="tile-actions">
-                      <Button
-                        variant="primary"
-                        disabled={askBusy || !questionInput.trim()}
-                        onClick={async () => {
-                          setAskBusy(true);
-                          setError('');
-
-                          try {
-                            const response = await askQuestion({
-                              userId: 7,
-                              syllabusId: active.syllabusId,
-                              question: questionInput,
-                            });
-                            setQuestionAsked(true);
-                            setAnswer(response.answer);
-                            patchActive((item) => {
-                              item.recommendedMaterials = response.recommendedMaterials;
-                              return item;
-                            });
-                          } catch (actionError) {
-                            setError(actionError instanceof Error ? actionError.message : '提问失败');
-                          } finally {
-                            setAskBusy(false);
-                          }
-                        }}
-                      >
-                        {askBusy ? '处理中...' : '提交提问'}
-                      </Button>
-                    </div>
-                  </section>
-                  <section className="response-panel">
-                    <strong className="response-title">回答</strong>
-                    <p className="response-copy">{answer || '尚未提问。'}</p>
-                  </section>
+                <div className="tile-head-controls">
+                  <StatusPill tone={disabled ? 'warning' : 'success'}>
+                    {disabled ? '待初始化' : '可交互'}
+                  </StatusPill>
                 </div>
-              </DisabledBlock>
+              </div>
+              {isStudentLoading ? (
+                <LoadingPlaceholder size="axis" />
+              ) : (
+                <DisabledBlock disabled={disabled} message="请先点击“选择学习”初始化 personal_syllabus">
+                  <WeekAxis
+                    items={active.personalSyllabus?.period ?? []}
+                    mode="competance"
+                    currentWeek={currentWeekIndex}
+                    expandedItemId={expandedTimelineWeekId}
+                    onToggleExpand={(itemId) => {
+                      setExpandedTimelineWeekId((current) => (current === itemId ? null : itemId));
+                    }}
+                  />
+                </DisabledBlock>
+              )}
             </article>
 
-            <article className="tile-card tile-slate tile-half">
-              <div className="tile-card-head">
-                <h3>推荐材料</h3>
-                <StatusPill tone={questionAsked ? 'success' : 'warning'}>
-                  {questionAsked ? 'AI' : 'syllabus-file'}
-                </StatusPill>
-              </div>
-              <DisabledBlock disabled={disabled} message="请先选择学习">
-                <MaterialShelf items={recommendationItems} emptyText="暂无可展示的推荐材料。" />
-              </DisabledBlock>
-            </article>
+            <div className={['student-focus-row', isAnswerExpanded ? 'is-answer-expanded' : ''].filter(Boolean).join(' ')}>
+              <article className="tile-card tile-blue student-question-tile">
+                <div className="tile-card-head">
+                  <h3>提问</h3>
+                  <div className="tile-head-controls">
+                    <StatusPill tone={questionAsked ? 'success' : 'neutral'}>
+                      {questionAsked ? '已提问' : '待提问'}
+                    </StatusPill>
+                    <Button variant="ghost" onClick={() => setIsAnswerExpanded((current) => !current)}>
+                      {isAnswerExpanded ? '收起' : '展开回答'}
+                    </Button>
+                  </div>
+                </div>
+                {isStudentLoading ? (
+                  <LoadingPlaceholder size="answer" />
+                ) : (
+                  <DisabledBlock disabled={disabled} message="请先选择学习">
+                    <div className={['question-grid', isAnswerExpanded ? 'is-answer-expanded' : ''].filter(Boolean).join(' ')}>
+                      <section className="response-panel">
+                        <label className="field">
+                          <span>问题</span>
+                          <textarea
+                            rows="4"
+                            value={questionInput}
+                            placeholder="例如：ETL 在这里具体负责什么？"
+                            onChange={(event) => setQuestionInput(event.target.value)}
+                          />
+                        </label>
+                        <div className="tile-actions">
+                          <Button
+                            variant="primary"
+                            disabled={askBusy || !questionInput.trim()}
+                            onClick={async () => {
+                              setAskBusy(true);
+                              setError('');
+
+                              try {
+                                const response = await askQuestion({
+                                  syllabusId: active.syllabusId,
+                                  question: questionInput,
+                                });
+                                const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
+                                setQuestionAsked(true);
+                                setAnswer(response.answer);
+                                patchActive((item) => {
+                                  item.recommendedMaterials = response.recommendedMaterials;
+                                  item.personalSyllabus = personalSyllabus ?? item.personalSyllabus;
+                                  return item;
+                                });
+                              } catch (actionError) {
+                                setError(actionError instanceof Error ? actionError.message : '提问失败');
+                              } finally {
+                                setAskBusy(false);
+                              }
+                            }}
+                          >
+                            {askBusy ? '处理中...' : '提交提问'}
+                          </Button>
+                        </div>
+                      </section>
+                      <section className={['response-panel', 'response-panel-answer', isAnswerExpanded ? 'is-expanded' : ''].filter(Boolean).join(' ')}>
+                        <strong className="response-title">回答</strong>
+                        <p className={['response-copy', isAnswerExpanded ? 'is-expanded' : 'is-condensed'].filter(Boolean).join(' ')}>
+                          {answer || '尚未提问。'}
+                        </p>
+                      </section>
+                    </div>
+                  </DisabledBlock>
+                )}
+              </article>
+
+              <article className="tile-card tile-slate student-recommendation-tile">
+                <div className="tile-card-head">
+                  <h3>推荐材料</h3>
+                  <StatusPill tone={questionAsked ? 'success' : 'warning'}>
+                    {questionAsked ? 'AI' : '默认'}
+                  </StatusPill>
+                </div>
+                {isStudentLoading ? (
+                  <LoadingPlaceholder size="shelf" />
+                ) : (
+                  <DisabledBlock disabled={disabled} message="请先选择学习">
+                    <MaterialShelf items={recommendationItems} emptyText="暂无可展示的推荐材料。" />
+                  </DisabledBlock>
+                )}
+              </article>
+            </div>
 
             <article className="tile-card tile-amber tile-span-full">
               <div className="tile-card-head">
@@ -335,82 +389,86 @@ export default function StudentDashboard({ navigate }) {
                   {disabled ? '不可提交' : '可提交'}
                 </StatusPill>
               </div>
-              <DisabledBlock disabled={disabled} message="请先选择学习">
-                <div className="study-record-grid">
-                  <section className="study-mode">
-                    <strong className="study-mode-title">方式 A</strong>
-                    <FileDropzone
-                      files={studyRecordFiles}
-                      onFilesChange={setStudyRecordFiles}
-                      title="上传学习记录 / dropbox"
-                    />
-                    <label className="field">
-                      <span>补充说明</span>
-                      <textarea rows="3" placeholder="输入学习记录说明" />
-                    </label>
-                  </section>
-                  <section className="study-mode">
-                    <strong className="study-mode-title">方式 B</strong>
-                    <label className="field">
-                      <span>学习周次</span>
-                      <select
-                        className="select-field"
-                        value={selectedWeekIndex}
-                        onChange={(event) => setSelectedWeekIndex(event.target.value)}
-                      >
-                        <option value="">请选择周次</option>
-                        {weekOptions.map((item) => (
-                          <option key={item.week_index} value={item.week_index}>
-                            {`第${item.week_index}周`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>付出小时数</span>
-                      <input
-                        inputMode="numeric"
-                        value={studyHours}
-                        onChange={(event) => setStudyHours(event.target.value)}
+              {isStudentLoading ? (
+                <LoadingPlaceholder size="record" />
+              ) : (
+                <DisabledBlock disabled={disabled} message="请先选择学习">
+                  <div className="study-record-grid">
+                    <section className="study-mode">
+                      <strong className="study-mode-title">方式 A</strong>
+                      <FileDropzone
+                        files={studyRecordFiles}
+                        onFilesChange={setStudyRecordFiles}
+                        title="上传学习记录 / dropbox"
                       />
-                    </label>
-                    <div className="tile-actions">
-                      <Button
-                        variant="primary"
-                        disabled={studyBusy || !selectedWeekIndex}
-                        onClick={async () => {
-                          setStudyBusy(true);
-                          setError('');
+                      <label className="field">
+                        <span>补充说明</span>
+                        <textarea rows="3" placeholder="输入学习记录说明" />
+                      </label>
+                    </section>
 
-                          try {
-                            const response = await updatePersonalSyllabus({
-                              userId: 7,
-                              syllabusId: active.syllabusId,
-                              weekIndex: Number(selectedWeekIndex),
-                              studyTimeSpent: Number(studyHours) || 0,
-                            });
+                    <section className="study-mode">
+                      <strong className="study-mode-title">方式 B</strong>
+                      <label className="field">
+                        <span>学习周次</span>
+                        <select
+                          className="select-field"
+                          value={selectedWeekIndex}
+                          onChange={(event) => setSelectedWeekIndex(event.target.value)}
+                        >
+                          <option value="">请选择周次</option>
+                          {weekOptions.map((item) => (
+                            <option key={item.week_index} value={item.week_index}>
+                              {`第${item.week_index}周`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>付出小时数</span>
+                        <input
+                          inputMode="numeric"
+                          value={studyHours}
+                          onChange={(event) => setStudyHours(event.target.value)}
+                        />
+                      </label>
+                      <div className="tile-actions">
+                        <Button
+                          variant="primary"
+                          disabled={studyBusy || !selectedWeekIndex}
+                          onClick={async () => {
+                            setStudyBusy(true);
+                            setError('');
 
-                            if (!response.success || !response.syllabus) {
-                              throw new Error(response.errorMessage || '提交失败');
+                            try {
+                              const response = await updatePersonalSyllabus({
+                                syllabusId: active.syllabusId,
+                                weekIndex: Number(selectedWeekIndex),
+                                studyTimeSpent: Number(studyHours) || 0,
+                              });
+
+                              if (!response.success || !response.syllabus) {
+                                throw new Error(response.errorMessage || '提交失败');
+                              }
+
+                              patchActive((item) => {
+                                item.personalSyllabus = response.syllabus;
+                                return item;
+                              });
+                            } catch (actionError) {
+                              setError(actionError instanceof Error ? actionError.message : '提交记录失败');
+                            } finally {
+                              setStudyBusy(false);
                             }
-
-                            patchActive((item) => {
-                              item.personalSyllabus = response.syllabus;
-                              return item;
-                            });
-                          } catch (actionError) {
-                            setError(actionError instanceof Error ? actionError.message : '提交记录失败');
-                          } finally {
-                            setStudyBusy(false);
-                          }
-                        }}
-                      >
-                        {studyBusy ? '处理中...' : '提交记录'}
-                      </Button>
-                    </div>
-                  </section>
-                </div>
-              </DisabledBlock>
+                          }}
+                        >
+                          {studyBusy ? '处理中...' : '提交记录'}
+                        </Button>
+                      </div>
+                    </section>
+                  </div>
+                </DisabledBlock>
+              )}
             </article>
           </section>
         ) : null}

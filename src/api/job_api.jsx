@@ -1,4 +1,5 @@
 import { RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID } from './mock_payloads';
+import { USE_MOCK_API, apiGet, apiPost } from './client';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -17,8 +18,6 @@ function parseJobListResponse(response) {
     stage: job.stage,
     progressIndex: job.progress_index,
     endStage: job.end_stage,
-    createdAt: job.created_at,
-    updatedAt: job.updated_at,
   }));
 }
 
@@ -55,6 +54,10 @@ function getJobLabel(job) {
 }
 
 export async function listJobsRaw(graphId) {
+  if (!USE_MOCK_API) {
+    return apiGet('/api/job_list', { graph_id: graphId });
+  }
+
   return cloneData(
     RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID[graphId] ?? {
       success: true,
@@ -63,6 +66,34 @@ export async function listJobsRaw(graphId) {
       error_code: '',
     },
   );
+}
+
+export async function createJobRaw(payload = {}) {
+  if (!USE_MOCK_API) {
+    return apiPost('/api/job_create', {
+      graph_id: payload.graphId ?? payload.graph_id,
+      file_id: payload.fileId ?? payload.file_id,
+      end_stage: payload.endStage ?? payload.end_stage,
+    });
+  }
+
+  return {
+    success: true,
+    job: { job_id: Date.now() },
+    request: payload,
+    error_message: '',
+    error_code: '',
+  };
+}
+
+export async function createJob(payload = {}) {
+  const response = await createJobRaw(payload);
+  return {
+    success: Boolean(response?.success),
+    jobId: response?.job?.job_id ?? null,
+    errorMessage: response?.error_message ?? '',
+    errorCode: response?.error_code ?? '',
+  };
 }
 
 export async function listJobs(graphId) {

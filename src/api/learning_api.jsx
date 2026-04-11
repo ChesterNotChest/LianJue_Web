@@ -3,7 +3,12 @@ import {
   RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7,
   RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7,
 } from './mock_payloads';
-import { listSyllabusFiles } from './file_transmit_api';
+import { USE_MOCK_API, apiPost } from './client';
+import { getFileDetail, listSyllabusFiles } from './file_transmit_api';
+import { getCurrentUserId, requireUserId } from './session';
+
+const RECOMMENDATION_STORAGE_PREFIX = 'student_recommendations_v1';
+const RECOMMENDATION_EXPIRE_ASKS = 5;
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -55,6 +60,10 @@ function parseUpdatePersonalSyllabusResponse(response) {
   };
 }
 
+function formatWeekLabel(weekIndexList = []) {
+  return weekIndexList.length ? `week ${weekIndexList.join(', ')}` : '';
+}
+
 function buildRecommendationItems(files, options = {}) {
   const matchedIds = Array.isArray(options.matchedIds) ? options.matchedIds : null;
   const weekIndexes = Array.isArray(options.weekIndexes) ? options.weekIndexes : null;
@@ -73,8 +82,190 @@ function buildRecommendationItems(files, options = {}) {
       fileId: file.fileId,
       title: file.title,
       source: file.source,
-      weekLabel: file.weekIndexList.length ? `第 ${file.weekIndexList.join(', ')} 周` : '',
+      weekLabel: formatWeekLabel(file.weekIndexList),
     }));
+}
+
+function normalizeRecommendationKey(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .trim()
+    .replace(/^[\s\[({]+|[\s\])}]+$/g, '')
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[\s_\-+./()[\]{}]+/g, '');
+}
+
+function buildRecommendationItemsByDocumentNames(files, documentNames = []) {
+  const normalizedFiles = files.map((file) => ({
+    ...file,
+    normalizedTitle: normalizeRecommendationKey(file.title),
+    normalizedPath: normalizeRecommendationKey(file.path),
+  }));
+
+  const items = [];
+  const seen = new Set();
+
+  documentNames.forEach((name) => {
+    const normalizedName = normalizeRecommendationKey(name);
+    if (!normalizedName) {
+      return;
+    }
+
+    const matchedFile = normalizedFiles.find((file) => (
+      normalizedName === file.normalizedTitle
+      || normalizedName === file.normalizedPath
+      || file.normalizedTitle.includes(normalizedName)
+      || normalizedName.includes(file.normalizedTitle)
+      || file.normalizedPath.includes(normalizedName)
+    ));
+
+    if (!matchedFile) {
+      return;
+    }
+
+    const dedupeKey = matchedFile.fileId ?? matchedFile.title;
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    items.push({
+      fileId: matchedFile.fileId,
+      title: matchedFile.title,
+      source: matchedFile.source,
+      weekLabel: formatWeekLabel(matchedFile.weekIndexList),
+    });
+  });
+
+  return items;
+}
+
+function mergeRecommendationItems(...groups) {
+  const merged = [];
+  const seen = new Set();
+
+  groups.flat().forEach((item) => {
+    if (!item) {
+      return;
+    }
+    const dedupeKey = item.fileId ?? item.title;
+    if (dedupeKey == null || seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    merged.push(item);
+  });
+
+  return merged;
+}
+
+function getRecommendationStorageKey(userId, syllabusId) {
+  return `${RECOMMENDATION_STORAGE_PREFIX}:${userId}:${syllabusId}`;
+}
+
+function loadRecommendationMemory(userId, syllabusId) {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getRecommendationStorageKey(userId, syllabusId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecommendationMemory(userId, syllabusId, items) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(getRecommendationStorageKey(userId, syllabusId), JSON.stringify(items));
+}
+
+function updateRecommendationMemory(userId, syllabusId, currentItems) {
+  const previousItems = loadRecommendationMemory(userId, syllabusId);
+  const nextItems = [];
+  const currentMap = new Map();
+
+  currentItems.forEach((item) => {
+    const key = item.fileId ?? item.title;
+    if (key == null) {
+      return;
+    }
+    currentMap.set(key, item);
+  });
+
+  previousItems.forEach((stored) => {
+    const key = stored.fileId ?? stored.title;
+    if (key == null) {
+      return;
+    }
+
+    if (currentMap.has(key)) {
+      nextItems.push({
+        ...currentMap.get(key),
+        staleAskCount: 0,
+      });
+      currentMap.delete(key);
+      return;
+    }
+
+    const staleAskCount = Number(stored.staleAskCount ?? 0) + 1;
+    if (staleAskCount < RECOMMENDATION_EXPIRE_ASKS) {
+      nextItems.push({
+        ...stored,
+        staleAskCount,
+      });
+    }
+  });
+
+  Array.from(currentMap.values()).reverse().forEach((item) => {
+    nextItems.unshift({
+      ...item,
+      staleAskCount: 0,
+    });
+  });
+
+  saveRecommendationMemory(userId, syllabusId, nextItems);
+  return nextItems.map(({ staleAskCount, ...item }) => item);
+}
+
+async function buildRecommendationItemsByFileIds(fileIds = [], syllabusFiles = []) {
+  const dedupedIds = Array.from(new Set(
+    (Array.isArray(fileIds) ? fileIds : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value)),
+  ));
+
+  if (!dedupedIds.length) {
+    return [];
+  }
+
+  const fileDetails = await Promise.all(dedupedIds.map(async (fileId) => {
+    try {
+      return await getFileDetail(fileId);
+    } catch {
+      return null;
+    }
+  }));
+
+  return fileDetails
+    .filter(Boolean)
+    .map((file) => {
+      const meta = syllabusFiles.find((item) => item.fileId === file.fileId);
+      return {
+        fileId: file.fileId,
+        title: file.title,
+        source: meta?.source ?? 'related-file',
+        weekLabel: formatWeekLabel(meta?.weekIndexList ?? []),
+      };
+    });
 }
 
 function pickDefaultWeeks(personalSyllabus) {
@@ -135,19 +326,44 @@ function applyStudyHours(personalSyllabus, weekIndex, studyTimeSpent) {
   return next;
 }
 
-export async function listStudentSyllabusesRaw() {
+export async function listStudentSyllabusesRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  if (!USE_MOCK_API) {
+    return apiPost('/api/syllabus_list', {
+      user_id: userId,
+      manage: false,
+    });
+  }
+
   return cloneData(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7);
 }
 
-export async function getPersonalSyllabusRaw(syllabusId) {
+export async function getPersonalSyllabusRaw(syllabusId, userId = null) {
+  const resolvedUserId = requireUserId({ userId, allowMockFallback: USE_MOCK_API });
+  if (!USE_MOCK_API) {
+    return apiPost('/api/learning_personal_syllabus_detail', {
+      user_id: resolvedUserId,
+      syllabus_id: syllabusId,
+    });
+  }
+
   return cloneData(RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[syllabusId]);
 }
 
 export async function askQuestionRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  if (!USE_MOCK_API) {
+    return apiPost('/api/learning_ask_question', {
+      user_id: userId,
+      syllabus_id: payload.syllabusId ?? payload.syllabus_id,
+      question: payload.question ?? '',
+    });
+  }
+
   return {
     ...cloneData(RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1),
     request: {
-      user_id: payload.userId ?? null,
+      user_id: userId,
       syllabus_id: payload.syllabusId ?? null,
       question: payload.question ?? '',
     },
@@ -155,12 +371,20 @@ export async function askQuestionRaw(payload = {}) {
 }
 
 export async function initPersonalSyllabusRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  if (!USE_MOCK_API) {
+    return apiPost('/api/learning_init_personal_syllabus', {
+      user_id: userId,
+      syllabus_id: payload.syllabusId ?? payload.syllabus_id,
+    });
+  }
+
   return {
     success: true,
     syllabus: {
       syllabus_id: payload.syllabusId ?? null,
-      user_id: payload.userId ?? 7,
-      personal_syllabus_path: `./schedule/student_alt/user_${payload.userId ?? 7}/${payload.syllabusId ?? 0}_personal.json`,
+      user_id: userId,
+      personal_syllabus_path: `./schedule/student_alt/user_${userId}/${payload.syllabusId ?? 0}_personal.json`,
     },
     error_message: '',
     error_code: '',
@@ -168,10 +392,20 @@ export async function initPersonalSyllabusRaw(payload = {}) {
 }
 
 export async function updatePersonalSyllabusRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  if (!USE_MOCK_API) {
+    return apiPost('/api/learning_update_personal_syllabus', {
+      user_id: userId,
+      syllabus_id: payload.syllabusId ?? payload.syllabus_id,
+      week_index: payload.weekIndex ?? payload.week_index,
+      study_time_spent: payload.studyTimeSpent ?? payload.study_time_spent,
+    });
+  }
+
   const source = cloneData(
-    RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[payload.syllabusId]?.syllabus ??
-      RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[1]?.syllabus ??
-      null,
+    RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[payload.syllabusId]?.syllabus
+      ?? RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[1]?.syllabus
+      ?? null,
   );
   const updated = source ? applyStudyHours(source, payload.weekIndex, payload.studyTimeSpent) : null;
 
@@ -212,6 +446,13 @@ export async function initPersonalSyllabus(payload = {}) {
   return parseInitPersonalSyllabusResponse(await initPersonalSyllabusRaw(payload));
 }
 
+export async function getPersonalSyllabus(payload = {}) {
+  return parsePersonalSyllabusResponse(await getPersonalSyllabusRaw(
+    payload.syllabusId ?? payload.syllabus_id,
+    payload.userId ?? payload.user_id ?? null,
+  ));
+}
+
 export async function updatePersonalSyllabus(payload = {}) {
   return parseUpdatePersonalSyllabusResponse(await updatePersonalSyllabusRaw(payload));
 }
@@ -219,10 +460,20 @@ export async function updatePersonalSyllabus(payload = {}) {
 export async function askQuestion(payload = {}) {
   const parsed = parseAskQuestionResponse(await askQuestionRaw(payload));
   const syllabusFiles = payload.syllabusId ? await listSyllabusFiles([payload.syllabusId]) : [];
+  const rawDocumentNames = Array.isArray(parsed.raw?.document_names) ? parsed.raw.document_names : [];
+
+  const fileIdRecommendationItems = await buildRecommendationItemsByFileIds(parsed.matchedFiles, syllabusFiles);
+  const documentNameRecommendationItems = buildRecommendationItemsByDocumentNames(syllabusFiles, rawDocumentNames);
+  const mergedRecommendationItems = mergeRecommendationItems(fileIdRecommendationItems, documentNameRecommendationItems);
+
+  const userId = getCurrentUserId();
+  const rememberedRecommendationItems = payload.syllabusId && userId
+    ? updateRecommendationMemory(userId, payload.syllabusId, mergedRecommendationItems)
+    : mergedRecommendationItems;
 
   return {
     ...parsed,
-    recommendedMaterials: buildRecommendationItems(syllabusFiles, { matchedIds: parsed.matchedFiles }),
+    recommendedMaterials: rememberedRecommendationItems,
   };
 }
 

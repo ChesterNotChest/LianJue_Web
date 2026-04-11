@@ -1,6 +1,11 @@
-function Button({ children, variant = 'secondary', disabled = false, ...props }) {
+function Button({ children, variant = 'secondary', disabled = false, className = '', ...props }) {
   return (
-    <button type="button" className={`button button-${variant}`} disabled={disabled} {...props}>
+    <button
+      type="button"
+      className={['button', `button-${variant}`, className].filter(Boolean).join(' ')}
+      disabled={disabled}
+      {...props}
+    >
       {children}
     </button>
   );
@@ -12,6 +17,19 @@ function StatusPill({ children, tone = 'neutral' }) {
 
 function EmptyState({ children }) {
   return <div className="resource-empty">{children}</div>;
+}
+
+function LoadingPlaceholder({ label = '加载中', size = 'card' }) {
+  return (
+    <div className={['loading-placeholder', `loading-placeholder-${size}`].join(' ')}>
+      <span className="loading-orbit" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <strong>{label}</strong>
+    </div>
+  );
 }
 
 function Stepper({ steps, currentStep, allowStep, onSelect }) {
@@ -26,7 +44,12 @@ function Stepper({ steps, currentStep, allowStep, onSelect }) {
           <button
             key={step}
             type="button"
-            className={['stepper-item', isActive ? 'is-active' : '', isDone ? 'is-done' : '', isLocked ? 'is-locked' : ''].filter(Boolean).join(' ')}
+            className={[
+              'stepper-item',
+              isActive ? 'is-active' : '',
+              isDone ? 'is-done' : '',
+              isLocked ? 'is-locked' : '',
+            ].filter(Boolean).join(' ')}
             onClick={() => onSelect(index)}
             disabled={isLocked}
           >
@@ -102,7 +125,11 @@ function DisabledBlock({ disabled, message, children }) {
   return (
     <div className="disabled-wrap">
       {children}
-      {disabled ? <div className="disabled-overlay"><strong>{message}</strong></div> : null}
+      {disabled ? (
+        <div className="disabled-overlay">
+          <strong>{message}</strong>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -154,15 +181,24 @@ function getImportanceLabel(level) {
   }
 }
 
-function WeekAxis({ items, mode = 'importance', currentWeek = null, renderContent }) {
+function WeekAxis({
+  items,
+  mode = 'importance',
+  currentWeek = null,
+  renderContent,
+  expanded = false,
+  expandedItemId = null,
+  onToggleExpand = null,
+}) {
   const list = Array.isArray(items) ? items : [];
+  const hasExpandedCard = expanded || Boolean(expandedItemId);
 
   if (!list.length) {
     return <EmptyState>暂无数据。</EmptyState>;
   }
 
   return (
-    <div className={`week-axis week-axis-${mode}`}>
+    <div className={`week-axis week-axis-${mode} ${hasExpandedCard ? 'is-expanded' : 'is-condensed'}`}>
       <div className="week-axis-track">
         {list.map((item) => {
           const tone = mode === 'competance' ? item.competance : item.importance ?? 'medium';
@@ -170,14 +206,24 @@ function WeekAxis({ items, mode = 'importance', currentWeek = null, renderConten
           const weekLabel = `第${item.week_index}周`;
           const timelineState = getTimelineState(item.week_index, currentWeek);
           const importanceLabel = getImportanceLabel(item.importance);
+          const itemId = item.weekAxisId ?? `week-axis-${mode}-${item.week_index}`;
+          const isExpanded = expandedItemId === itemId;
+          const canToggleExpand = !renderContent && typeof onToggleExpand === 'function';
 
           return (
             <article
               key={item.week_index}
-              className={['week-axis-card', `tone-${tone}`, `time-${timelineState}`, isCurrent ? 'is-current' : ''].filter(Boolean).join(' ')}
+              data-week-axis-id={itemId}
+              className={[
+                'week-axis-card',
+                `tone-${tone}`,
+                `time-${timelineState}`,
+                isCurrent ? 'is-current' : '',
+                isExpanded ? 'is-expanded' : '',
+              ].filter(Boolean).join(' ')}
             >
               <div className="week-axis-card-head">
-                <span className="week-axis-index">{weekLabel}</span>
+                {/* <span className="week-axis-index">{weekLabel}</span> */}
                 {mode === 'competance' ? (
                   <div className="week-axis-status-stack">
                     <StatusPill tone={tone === 'master' ? 'success' : tone === 'weak' ? 'danger' : tone === 'none' ? 'neutral' : 'warning'}>
@@ -188,16 +234,40 @@ function WeekAxis({ items, mode = 'importance', currentWeek = null, renderConten
                         {importanceLabel}
                       </StatusPill>
                     ) : null}
+                    {canToggleExpand ? (
+                      <Button
+                        variant="ghost"
+                        className="button-compact week-axis-expand-button"
+                        onClick={() => onToggleExpand(itemId)}
+                      >
+                        {isExpanded ? '收起' : '展开'}
+                      </Button>
+                    ) : null}
                   </div>
                 ) : (
-                  <StatusPill tone={tone === 'high' ? 'danger' : tone === 'medium' ? 'warning' : 'neutral'}>{tone}</StatusPill>
+                  <div className="week-axis-status-stack">
+                    <StatusPill tone={tone === 'high' ? 'danger' : tone === 'medium' ? 'warning' : 'neutral'}>
+                      {importanceLabel || tone}
+                    </StatusPill>
+                    {canToggleExpand ? (
+                      <Button
+                        variant="ghost"
+                        className="button-compact week-axis-expand-button"
+                        onClick={() => onToggleExpand(itemId)}
+                      >
+                        {isExpanded ? '收起' : '展开'}
+                      </Button>
+                    ) : null}
+                  </div>
                 )}
               </div>
               <div className="week-axis-ruler">
                 <span className="week-axis-ruler-label">{weekLabel}</span>
                 <span className="week-axis-ruler-dot" />
               </div>
-              {renderContent ? renderContent(item) : <p className="week-axis-content">{item.enhanced_content ?? item.content ?? ''}</p>}
+              {renderContent ? renderContent(item) : (
+                <p className="week-axis-content">{item.enhanced_content ?? item.content ?? ''}</p>
+              )}
               {mode === 'competance'
                 ? <small className="week-axis-foot">{`progress ${item.competance_progress ?? 0}`}</small>
                 : item.day_one ? <small className="week-axis-foot">{`day_one ${item.day_one}`}</small> : null}
@@ -238,6 +308,7 @@ export {
   Button,
   DisabledBlock,
   EmptyState,
+  LoadingPlaceholder,
   MaterialShelf,
   ModalShell,
   StatusPill,
