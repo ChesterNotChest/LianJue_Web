@@ -17,8 +17,12 @@ import {
   createGraph,
   generateFinalMaterial,
   generateMaterialDraft,
+  getMaterialDraftDetailRaw,
+  getMaterialStatusRaw,
   getTeacherDashboardData,
   listGraphs,
+  parseMaterialDraftResponse,
+  parseMaterialStatusResponse,
   publishMaterial,
   updateFinalMaterial,
   updateMaterialDraft,
@@ -26,6 +30,9 @@ import {
   updateSyllabusDraft,
   uploadCalendar,
 } from '../api/syllabus_material_api';
+import { getFileDetail, uploadFile } from '../api/file_transmit_api';
+import { createJob } from '../api/job_api';
+import { getCurrentUserId } from '../api/session';
 
 const BUILD_STEPS = ['上传', '生成草稿', '修正草稿', '生成终稿', '修正终稿', '完成'];
 const MATERIAL_STEPS = ['选择草稿', '修正草稿', '生成终稿', '修正终稿', '发布'];
@@ -944,6 +951,12 @@ export default function TeacherDashboard({ navigate }) {
     let cancelled = false;
 
     async function load() {
+      if (!getCurrentUserId()) {
+        navigate('/login');
+        setIsBooting(false);
+        return;
+      }
+
       setIsBooting(true);
       setError('');
 
@@ -970,7 +983,7 @@ export default function TeacherDashboard({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [navigate]);
 
   const active = useMemo(
     () => syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null,
@@ -1142,24 +1155,45 @@ export default function TeacherDashboard({ navigate }) {
                   <div className="tile-actions">
                     <Button
                       variant="secondary"
-                      disabled={materialUploadBusy || !materialUploadFiles.length}
+                      disabled={materialUploadBusy || !materialUploadFiles.length || !active.graphId}
                       onClick={async () => {
                         setMaterialUploadBusy(true);
                         try {
-                          const nextFiles = materialUploadFiles.map((file, index) => ({
-                            fileId: Date.now() + index,
-                            title: file.name,
-                            source: 'graph-file',
-                            weekLabel: '',
-                            tagText: 'pending · upload',
-                            tagTone: 'warning',
-                          }));
+                          const nextFiles = await Promise.all(
+                            materialUploadFiles.map(async (file) => {
+                              const uploadResponse = await uploadFile({ file });
+                              if (!uploadResponse.success || !uploadResponse.file?.file_id) {
+                                throw new Error(uploadResponse.error_message || '上传教学材料失败');
+                              }
+                              const fileDetail = await getFileDetail(uploadResponse.file.file_id);
+                              if (!fileDetail?.fileId) {
+                                throw new Error('get file detail failed');
+                              }
+                              const jobResponse = await createJob({
+                                graphId: active.graphId,
+                                fileId: uploadResponse.file.file_id,
+                              });
+                              if (!jobResponse.success) {
+                                throw new Error(jobResponse.errorMessage || '创建解析任务失败');
+                              }
+                              return {
+                                fileId: fileDetail.fileId,
+                                title: fileDetail.title,
+                                source: 'graph-file',
+                                weekLabel: '',
+                                tagText: 'pending · pdf_to_md',
+                                tagTone: 'warning',
+                              };
+                            }),
+                          );
                           patchActive((item) => {
                             item.graphFiles = [...nextFiles, ...item.graphFiles];
                             item.graphFileCount = item.graphFiles.length;
                             return item;
                           });
                           setMaterialUploadFiles([]);
+                        } catch (actionError) {
+                          setError(actionError instanceof Error ? actionError.message : '上传教学材料失败');
                         } finally {
                           setMaterialUploadBusy(false);
                         }
@@ -1214,6 +1248,7 @@ export default function TeacherDashboard({ navigate }) {
             try {
               const response = await uploadCalendar({
                 graphId: buildModal.selectedGraphId,
+                file: buildModal.calendarFiles[0],
               });
               if (!response.success || !response.syllabusId) {
                 throw new Error(response.errorMessage || '上传失败');
@@ -1413,13 +1448,57 @@ export default function TeacherDashboard({ navigate }) {
             setMaterialModal((current) => ({ ...current, busy: 'material-draft' }));
             setError('');
             try {
-              await generateMaterialDraft({
+              const response = await generateMaterialDraft({
                 syllabusId: active.syllabusId,
                 involvedWeeks: materialModal.involvedWeeks,
                 questionTypeDistribution: materialModal.distribution,
-                materialId: materialModal.materialId,
               });
-              setMaterialModal((current) => ({ ...current, busy: '', step: 1 }));
+              if (!response.success || !response.materialId) {
+                throw new Error(response.errorMessage || 'generate material draft failed');
+              }
+
+              const [draftResponse, statusResponse] = await Promise.all([
+                getMaterialDraftDetailRaw(response.materialId),
+                getMaterialStatusRaw(response.materialId),
+              ]);
+              const draft = parseMaterialDraftResponse(draftResponse);
+              const status = parseMaterialStatusResponse(statusResponse);
+
+              patchActive((item) => {
+                const existingIndex = item.materialDrafts.findIndex(
+                  (draftItem) => draftItem.materialId === response.materialId,
+                );
+                const nextMaterial = {
+                  materialId: response.materialId,
+                  title: draft?.material_title ?? `material_${response.materialId}`,
+                  draftPath: null,
+                  finalPath: null,
+                  pdfPath: null,
+                  createTime: null,
+                  draft,
+                  finalData: null,
+                  status,
+                };
+
+                if (existingIndex >= 0) {
+                  item.materialDrafts[existingIndex] = nextMaterial;
+                } else {
+                  item.materialDrafts = [nextMaterial, ...item.materialDrafts];
+                }
+
+                return item;
+              });
+
+              setMaterialModal((current) => ({
+                ...current,
+                busy: '',
+                step: 1,
+                materialId: response.materialId,
+                draftTitle: draft?.material_title ?? current.draftTitle,
+                involvedWeeks: cloneData(draft?.involved_weeks ?? current.involvedWeeks),
+                draftQuestions: cloneData(draft?.questions ?? []),
+                finalQuestions: [],
+              }));
             } catch (actionError) {
               setMaterialModal((current) => ({ ...current, busy: '' }));
               setError(actionError instanceof Error ? actionError.message : '生成习题草稿失败');

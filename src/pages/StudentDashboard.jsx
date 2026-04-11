@@ -11,10 +11,12 @@ import {
 } from '../components/DashboardShared';
 import {
   askQuestion,
+  getPersonalSyllabus,
   getStudentDashboardData,
   initPersonalSyllabus,
   updatePersonalSyllabus,
 } from '../api/learning_api';
+import { getCurrentUserId } from '../api/session';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
@@ -108,6 +110,12 @@ export default function StudentDashboard({ navigate }) {
     let cancelled = false;
 
     async function load() {
+      if (!getCurrentUserId()) {
+        navigate('/login');
+        setIsBooting(false);
+        return;
+      }
+
       setIsBooting(true);
       setError('');
 
@@ -132,7 +140,7 @@ export default function StudentDashboard({ navigate }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [navigate]);
 
   const active = syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null;
   const weekOptions = useMemo(() => active?.personalSyllabus?.period ?? [], [active?.personalSyllabus]);
@@ -190,12 +198,14 @@ export default function StudentDashboard({ navigate }) {
               setError('');
 
               try {
-                await initPersonalSyllabus({ userId: 7, syllabusId: active.syllabusId });
+                const currentUserId = getCurrentUserId();
+                await initPersonalSyllabus({ syllabusId: active.syllabusId });
+                const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
                 patchActive((item) => {
                   item.isLearning = true;
-                  item.personalSyllabus ??= {
+                  item.personalSyllabus = personalSyllabus ?? item.personalSyllabus ?? {
                     syllabus_id: item.syllabusId,
-                    user_id: 7,
+                    user_id: currentUserId,
                     review_count: 0,
                     reviewed_at: 0,
                     period: [],
@@ -287,14 +297,15 @@ export default function StudentDashboard({ navigate }) {
 
                           try {
                             const response = await askQuestion({
-                              userId: 7,
                               syllabusId: active.syllabusId,
                               question: questionInput,
                             });
+                            const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
                             setQuestionAsked(true);
                             setAnswer(response.answer);
                             patchActive((item) => {
                               item.recommendedMaterials = response.recommendedMaterials;
+                              item.personalSyllabus = personalSyllabus ?? item.personalSyllabus;
                               return item;
                             });
                           } catch (actionError) {
@@ -384,7 +395,6 @@ export default function StudentDashboard({ navigate }) {
 
                           try {
                             const response = await updatePersonalSyllabus({
-                              userId: 7,
                               syllabusId: active.syllabusId,
                               weekIndex: Number(selectedWeekIndex),
                               studyTimeSpent: Number(studyHours) || 0,
