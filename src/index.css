@@ -844,6 +844,32 @@ a {
   gap: 12px;
 }
 
+.final-editor-layout {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'enhanced'
+    'original';
+  align-items: start;
+}
+
+.final-editor-layout.is-expanded {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  grid-template-areas: 'enhanced original';
+  column-gap: 14px;
+}
+
+.final-editor-field {
+  min-width: 0;
+}
+
+.final-editor-field-enhanced {
+  grid-area: enhanced;
+}
+
+.final-editor-field-original {
+  grid-area: original;
+}
+
 .week-axis-readonly {
   min-height: 92px;
   border: 1px solid rgba(72, 54, 36, 0.12);
@@ -852,6 +878,15 @@ a {
   background: rgba(72, 54, 36, 0.04);
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.week-axis-readonly-muted {
+  opacity: 0.72;
+  background: rgba(72, 54, 36, 0.035);
+}
+
+.week-axis-input-enhanced {
+  min-height: 180px;
 }
 
 .tone-low .week-axis-ruler-dot,
@@ -943,6 +978,11 @@ a {
   box-shadow: 0 24px 60px rgba(47, 35, 23, 0.28);
 }
 
+.modal-shell-tall {
+  width: min(1380px, 100%);
+  max-height: calc(100vh - 24px);
+}
+
 .modal-header,
 .modal-body {
   padding: 24px 28px;
@@ -960,6 +1000,32 @@ a {
 .modal-section {
   display: grid;
   gap: 16px;
+}
+
+.final-editor-section {
+  gap: 18px;
+}
+
+.final-editor-axis .week-axis-card {
+  height: 360px;
+}
+
+.selected-banner {
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(31, 92, 74, 0.14);
+  background: rgba(31, 92, 74, 0.08);
+  color: var(--brand);
+}
+
+.week-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.week-checkbox-row {
+  min-height: 48px;
 }
 
 .stepper {
@@ -989,6 +1055,7 @@ a {
 
 .stepper-item.is-locked {
   opacity: 0.52;
+  background: rgba(42, 33, 24, 0.03);
 }
 
 .stepper-index {
@@ -1062,9 +1129,17 @@ a {
 
   .teacher-side-stack,
   .graph-create-row,
-  .options-grid {
+  .options-grid,
+  .week-checkbox-grid {
     grid-column: span 12;
     grid-template-columns: 1fr;
+  }
+
+  .final-editor-layout.is-expanded {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'enhanced'
+      'original';
   }
 
   .student-focus-row,

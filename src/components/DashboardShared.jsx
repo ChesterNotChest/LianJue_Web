@@ -62,11 +62,11 @@ function Stepper({ steps, currentStep, allowStep, onSelect }) {
   );
 }
 
-function ModalShell({ title, children, onClose }) {
+function ModalShell({ title, children, onClose, className = '' }) {
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-shell"
+        className={['modal-shell', className].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -189,6 +189,7 @@ function WeekAxis({
   expanded = false,
   expandedItemId = null,
   onToggleExpand = null,
+  className = '',
 }) {
   const list = Array.isArray(items) ? items : [];
   const hasExpandedCard = expanded || Boolean(expandedItemId);
@@ -198,7 +199,7 @@ function WeekAxis({
   }
 
   return (
-    <div className={`week-axis week-axis-${mode} ${hasExpandedCard ? 'is-expanded' : 'is-condensed'}`}>
+    <div className={['week-axis', `week-axis-${mode}`, hasExpandedCard ? 'is-expanded' : 'is-condensed', className].filter(Boolean).join(' ')}>
       <div className="week-axis-track">
         {list.map((item) => {
           const tone = mode === 'competance' ? item.competance : item.importance ?? 'medium';

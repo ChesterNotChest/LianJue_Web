@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
 import {
   Button,
@@ -201,6 +201,7 @@ function createBuildState(active, graphOptions = []) {
     finalTitle: active.finalData?.title ?? active.title,
     finalDayOne: active.finalData?.day_one ?? '',
     finalPeriod: normalizeFinalPeriod(active.finalData?.period ?? [], draftPeriod),
+    expandedFinalWeekId: '',
     selectedGraphName: active.graphName ?? graphOptions.find((item) => item.graphId === active.graphId)?.graphName ?? '',
     newGraphName: '',
     selectedGraphId: active.graphId ?? '',
@@ -209,20 +210,33 @@ function createBuildState(active, graphOptions = []) {
 }
 
 function createMaterialState(active) {
-  const selected = active.materialDrafts[0] ?? null;
-
   return {
     open: true,
-    step: selected ? (selected.status.isFinalMissing ? 1 : 3) : 0,
+    step: 0,
     busy: '',
-    materialId: selected?.materialId ?? null,
-    draftTitle: selected?.draft?.material_title ?? selected?.title ?? `${active.title}_draft`,
-    involvedWeeks: cloneData(selected?.draft?.involved_weeks ?? [4]),
+    materialId: null,
+    draftTitle: `${active.title}_draft`,
+    involvedWeeks: [],
     distribution: { single: 2, judge: 2, short: 1 },
-    draftQuestions: cloneData(selected?.draft?.questions ?? []),
-    finalQuestions: cloneData(selected?.finalData?.questions ?? []).map(hydrateFinalQuestion),
+    draftQuestions: [],
+    finalQuestions: [],
     publish: { new_pdf: true, do_publish: false },
   };
+}
+
+function getMaterialWeekOptions(syllabus) {
+  const period = Array.isArray(syllabus?.finalData?.period) ? syllabus.finalData.period : [];
+  if (period.length) {
+    return period.map((item) => ({
+      weekIndex: Number(item.week_index),
+      label: `第${item.week_index}周`,
+    }));
+  }
+
+  return Array.from({ length: 16 }, (_, index) => ({
+    weekIndex: index + 1,
+    label: `第${index + 1}周`,
+  }));
 }
 
 function mergeSyllabusData(source, patch) {
@@ -292,25 +306,31 @@ function DraftEditorAxis({ items, currentWeek, onChange }) {
   );
 }
 
-function FinalEditorAxis({ items, currentWeek, onChange }) {
+function FinalEditorAxis({ items, currentWeek, expandedItemId, onExpand, onChange }) {
   return (
     <WeekAxis
+      className="final-editor-axis"
       items={items}
       currentWeek={currentWeek}
+      expandedItemId={expandedItemId}
       renderContent={(item) => (
-        <div className="week-axis-editor-stack">
-          <label className="field">
-            <span>original_content</span>
-            <div className="week-axis-readonly">{item.original_content ?? item.content ?? ''}</div>
-          </label>
-          <label className="field">
+        <div className={['week-axis-editor-stack', 'final-editor-layout', expandedItemId === `week-axis-importance-${item.week_index}` ? 'is-expanded' : ''].filter(Boolean).join(' ')}>
+          <label className={['field', 'final-editor-field', 'final-editor-field-enhanced'].join(' ')}>
             <span>enhanced_content</span>
             <textarea
-              className="week-axis-input"
-              rows="6"
+              className={['week-axis-input', 'week-axis-input-enhanced'].join(' ')}
+              rows="8"
               value={item.enhanced_content ?? ''}
+              onFocus={() => onExpand(`week-axis-importance-${item.week_index}`)}
+              onClick={() => onExpand(`week-axis-importance-${item.week_index}`)}
               onChange={(event) => onChange(item.week_index, event.target.value)}
             />
+          </label>
+          <label className={['field', 'final-editor-field', 'final-editor-field-original'].join(' ')}>
+            <span>original_content</span>
+            <div className={['week-axis-readonly', 'week-axis-readonly-muted'].join(' ')}>
+              {item.original_content ?? item.content ?? ''}
+            </div>
           </label>
         </div>
       )}
@@ -397,6 +417,7 @@ function BuildSyllabusModal({
   onGenerateFinal,
   onSaveFinal,
 }) {
+  const finalEditorRef = useRef(null);
   const allowStep = (index) => {
     if (index === 0) return true;
     if (index === 1) return !syllabus.status.isEduCalendarMissing;
@@ -405,7 +426,7 @@ function BuildSyllabusModal({
   };
 
   return (
-    <ModalShell title="构建教学大纲" onClose={onClose}>
+    <ModalShell title="构建教学大纲" onClose={onClose} className={state.step === 4 ? 'modal-shell-tall' : ''}>
       <Stepper
         steps={BUILD_STEPS}
         currentStep={state.step}
@@ -596,11 +617,11 @@ function BuildSyllabusModal({
         </section>
       ) : null}
 
-      {state.step === 4 ? (
-        <section className="modal-section">
-          <div className="modal-form-grid">
-            <label className="field">
-              <span>title</span>
+        {state.step === 4 ? (
+          <section className="modal-section final-editor-section">
+            <div className="modal-form-grid">
+              <label className="field">
+                <span>title</span>
               <input
                 value={state.finalTitle}
                 onChange={(event) => setState((current) => ({ ...current, finalTitle: event.target.value }))}
@@ -614,12 +635,17 @@ function BuildSyllabusModal({
               />
             </label>
           </div>
-          <FinalEditorAxis
-            items={state.finalPeriod}
-            currentWeek={finalCurrentWeek}
-            onChange={(weekIndex, value) => {
-              const next = cloneData(state.finalPeriod);
-              const target = next.find((item) => item.week_index === weekIndex);
+            <FinalEditorAxis
+              items={state.finalPeriod}
+              currentWeek={finalCurrentWeek}
+              expandedItemId={state.expandedFinalWeekId}
+              onExpand={(itemId) => setState((current) => ({
+                ...current,
+                expandedFinalWeekId: current.expandedFinalWeekId === itemId ? '' : itemId,
+              }))}
+              onChange={(weekIndex, value) => {
+                const next = cloneData(state.finalPeriod);
+                const target = next.find((item) => item.week_index === weekIndex);
               if (target) target.enhanced_content = value;
               setState((current) => ({ ...current, finalPeriod: next }));
             }}
@@ -661,10 +687,12 @@ function MaterialModal({
   onSaveFinal,
   onPublish,
 }) {
+  const selectedMaterial = syllabus.materialDrafts.find((item) => item.materialId === state.materialId) ?? null;
+  const weekOptions = getMaterialWeekOptions(syllabus);
   const allowStep = (index) => {
     if (index === 0) return true;
-    if (index === 1 || index === 2) return syllabus.materialDrafts.length > 0 || !syllabus.status.isEduCalendarMissing;
-    return state.finalQuestions.length > 0 || syllabus.materialDrafts.some((item) => !item.status.isFinalMissing);
+    if (index === 1 || index === 2) return Boolean(selectedMaterial || state.draftQuestions.length);
+    return Boolean(state.finalQuestions.length || (selectedMaterial && !selectedMaterial.status.isFinalMissing));
   };
 
   return (
@@ -674,16 +702,22 @@ function MaterialModal({
         currentStep={state.step}
         allowStep={allowStep}
         onSelect={(index) => allowStep(index) && setState((current) => ({ ...current, step: index }))}
-      />
+        />
 
-      {state.step === 0 ? (
-        <section className="modal-section">
-          <div className="study-mode">
-            <div className="subsection-head">
-              <strong className="study-mode-title">选择草稿 / 生成草稿</strong>
-              <StatusPill tone={syllabus.materialDrafts.length ? 'success' : 'warning'}>
-                {syllabus.materialDrafts.length ? '已有草稿' : '暂无草稿'}
-              </StatusPill>
+      {selectedMaterial ? (
+        <div className="selected-banner">
+          <strong>{`已选择 ${selectedMaterial.draft?.material_title ?? selectedMaterial.title}`}</strong>
+        </div>
+      ) : null}
+
+        {state.step === 0 ? (
+          <section className="modal-section">
+            <div className="study-mode">
+              <div className="subsection-head">
+                <strong className="study-mode-title">选择习题</strong>
+                <StatusPill tone={syllabus.materialDrafts.length ? 'success' : 'warning'}>
+                  {syllabus.materialDrafts.length ? '已有草稿' : '暂无草稿'}
+                </StatusPill>
             </div>
 
             {syllabus.materialDrafts.length ? (
@@ -714,25 +748,38 @@ function MaterialModal({
                 ))}
               </div>
             ) : (
-              <EmptyState>暂无草稿。</EmptyState>
-            )}
+                <EmptyState>暂无草稿。</EmptyState>
+              )}
+            </div>
 
-            <div className="material-setup-grid">
-              <label className="field">
-                <span>involved_weeks</span>
-                <input
-                  value={state.involvedWeeks.join(', ')}
-                  onChange={(event) => setState((current) => ({
-                    ...current,
-                    involvedWeeks: event.target.value
-                      .split(',')
-                      .map((item) => Number(item.trim()))
-                      .filter(Boolean),
-                  }))}
-                />
-              </label>
-              {['single', 'judge', 'short'].map((key) => (
-                <label key={key} className="field">
+            <div className="study-mode">
+              <div className="subsection-head">
+                <strong className="study-mode-title">生成习题草稿</strong>
+              </div>
+              <div className="week-checkbox-grid">
+                {weekOptions.map((item) => (
+                  <label key={item.weekIndex} className="checkbox-row week-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={state.involvedWeeks.includes(item.weekIndex)}
+                      onChange={(event) => setState((current) => ({
+                        ...current,
+                        involvedWeeks: event.target.checked
+                          ? [...current.involvedWeeks, item.weekIndex].sort((a, b) => a - b)
+                          : current.involvedWeeks.filter((value) => value !== item.weekIndex),
+                      }))}
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="material-setup-grid">
+                <label className="field">
+                  <span>involved_weeks</span>
+                  <input value={state.involvedWeeks.join(', ')} readOnly />
+                </label>
+                {['single', 'judge', 'short'].map((key) => (
+                  <label key={key} className="field">
                   <span>{key}</span>
                   <input
                     value={state.distribution[key]}
@@ -748,12 +795,12 @@ function MaterialModal({
               ))}
             </div>
 
-            <div className="tile-actions">
-              <Button variant="primary" onClick={onGenerateDraft} disabled={Boolean(state.busy)}>
-                {state.busy === 'material-draft' ? '处理中...' : '生成习题草稿'}
-              </Button>
+              <div className="tile-actions">
+                <Button variant="primary" onClick={onGenerateDraft} disabled={Boolean(state.busy)}>
+                  {state.busy === 'material-draft' ? '处理中...' : '生成习题草稿'}
+                </Button>
+              </div>
             </div>
-          </div>
         </section>
       ) : null}
 
@@ -1783,4 +1830,6 @@ export default function TeacherDashboard({ navigate }) {
     </>
   );
 }
+
+
 
