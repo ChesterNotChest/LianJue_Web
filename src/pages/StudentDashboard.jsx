@@ -16,24 +16,12 @@ import {
   getLearningProfile,
   getStudentDashboardData,
   initPersonalSyllabus,
-  updatePersonalSyllabus,
 } from '../api/learning_api';
 import { downloadFile } from '../api/file_transmit_api';
 import { getCurrentUserId } from '../api/session';
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function pickDefaultWeekIndex(personalSyllabus) {
-  const period = Array.isArray(personalSyllabus?.period) ? personalSyllabus.period : [];
-
-  return (
-    period.find((item) => item.competance === 'weak')?.week_index
-    ?? period.find((item) => item.competance === 'none')?.week_index
-    ?? period[0]?.week_index
-    ?? ''
-  );
 }
 
 function getCurrentWeekIndex(dayOneTime, periodLength) {
@@ -53,43 +41,6 @@ function getCurrentWeekIndex(dayOneTime, periodLength) {
 
   const weekIndex = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
   return Math.min(Math.max(weekIndex, 1), periodLength);
-}
-
-function FileDropzone({ files, onFilesChange, title = '选择文件 / dropbox' }) {
-  const [isDragging, setIsDragging] = useState(false);
-
-  const applyFiles = (fileList) => {
-    onFilesChange(Array.from(fileList ?? []));
-  };
-
-  return (
-    <label
-      className={['dropzone', 'file-dropzone', isDragging ? 'is-dragging' : ''].filter(Boolean).join(' ')}
-      onDragOver={(event) => {
-        event.preventDefault();
-        setIsDragging(true);
-      }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsDragging(false);
-        applyFiles(event.dataTransfer?.files);
-      }}
-    >
-      <input
-        className="file-dropzone-input"
-        type="file"
-        multiple
-        onChange={(event) => applyFiles(event.target.files)}
-      />
-      <div className="file-dropzone-copy">
-        <strong>{title}</strong>
-        <small>
-          {files.length ? files.map((file) => file.name).join(' / ') : '支持点击选择或拖拽到这里'}
-        </small>
-      </div>
-    </label>
-  );
 }
 
 const DEFAULT_PROFILE_METRICS = [
@@ -141,10 +92,6 @@ export default function StudentDashboard({ navigate }) {
   const [answer, setAnswer] = useState('');
   const [askBusy, setAskBusy] = useState(false);
   const [initBusy, setInitBusy] = useState(false);
-  const [studyBusy, setStudyBusy] = useState(false);
-  const [studyHours, setStudyHours] = useState('2');
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState('');
-  const [studyRecordFiles, setStudyRecordFiles] = useState([]);
   const [expandedTimelineWeekId, setExpandedTimelineWeekId] = useState(null);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
 
@@ -226,26 +173,13 @@ export default function StudentDashboard({ navigate }) {
   }, [activeId, isBooting, syllabuses]);
 
   const active = syllabuses.find((item) => item.syllabusId === activeId) ?? syllabuses[0] ?? null;
-  const weekOptions = useMemo(() => active?.personalSyllabus?.period ?? [], [active?.personalSyllabus]);
   const currentWeekIndex = useMemo(
-    () => getCurrentWeekIndex(active?.dayOneTime, weekOptions.length),
-    [active?.dayOneTime, weekOptions.length],
+    () => getCurrentWeekIndex(active?.dayOneTime, active?.personalSyllabus?.period?.length ?? 0),
+    [active?.dayOneTime, active?.personalSyllabus?.period?.length],
   );
   const disabled = isBooting || !active || !active.isLearning || !active.personalSyllabus;
   const showStudentShell = Boolean(active) || isBooting;
   const isStudentLoading = isBooting && !active;
-
-  useEffect(() => {
-    if (!weekOptions.length) {
-      setSelectedWeekIndex('');
-      return;
-    }
-
-    const stillExists = weekOptions.some((item) => String(item.week_index) === String(selectedWeekIndex));
-    if (!stillExists) {
-      setSelectedWeekIndex(String(pickDefaultWeekIndex(active?.personalSyllabus)));
-    }
-  }, [active?.personalSyllabus, selectedWeekIndex, weekOptions]);
 
   useEffect(() => {
     setExpandedTimelineWeekId(null);
@@ -269,7 +203,6 @@ export default function StudentDashboard({ navigate }) {
     setQuestionAsked(false);
     setQuestionInput('');
     setAnswer('');
-    setStudyRecordFiles([]);
   };
 
   const recommendationItems = questionAsked
@@ -604,99 +537,6 @@ export default function StudentDashboard({ navigate }) {
                 )}
               </article>
             </div>
-
-            <article className="tile-card tile-amber tile-span-full">
-              <div className="tile-card-head">
-                <h3>学习内容记录</h3>
-                <StatusPill tone={disabled ? 'warning' : 'success'}>
-                  {disabled ? '不可提交' : '可提交'}
-                </StatusPill>
-              </div>
-              {isStudentLoading ? (
-                <LoadingPlaceholder size="record" />
-              ) : (
-                <DisabledBlock disabled={disabled} message="请先选择学习">
-                  <div className="study-record-grid">
-                    <section>
-                      <DisabledBlock disabled message="正在开发">
-                        <div className="study-mode is-disabled-mode">
-                          <strong className="study-mode-title">方式 A</strong>
-                          <FileDropzone
-                            files={studyRecordFiles}
-                            onFilesChange={setStudyRecordFiles}
-                            title="上传学习记录 / dropbox"
-                          />
-                          <label className="field">
-                            <span>补充说明</span>
-                            <textarea rows="3" placeholder="输入学习记录说明" />
-                          </label>
-                        </div>
-                      </DisabledBlock>
-                    </section>
-
-                    <section className="study-mode">
-                      <strong className="study-mode-title">方式 B</strong>
-                      <label className="field">
-                        <span>学习周次</span>
-                        <select
-                          className="select-field"
-                          value={selectedWeekIndex}
-                          onChange={(event) => setSelectedWeekIndex(event.target.value)}
-                        >
-                          <option value="">请选择周次</option>
-                          {weekOptions.map((item) => (
-                            <option key={item.week_index} value={item.week_index}>
-                              {`第${item.week_index}周`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="field">
-                        <span>付出小时数</span>
-                        <input
-                          inputMode="numeric"
-                          value={studyHours}
-                          onChange={(event) => setStudyHours(event.target.value)}
-                        />
-                      </label>
-                      <div className="tile-actions">
-                        <Button
-                          variant="primary"
-                          disabled={studyBusy || !selectedWeekIndex}
-                          onClick={async () => {
-                            setStudyBusy(true);
-                            setError('');
-
-                            try {
-                              const response = await updatePersonalSyllabus({
-                                syllabusId: active.syllabusId,
-                                weekIndex: Number(selectedWeekIndex),
-                                studyTimeSpent: Number(studyHours) || 0,
-                              });
-
-                              if (!response.success || !response.syllabus) {
-                                throw new Error(response.errorMessage || '提交失败');
-                              }
-
-                              patchActive((item) => {
-                                item.personalSyllabus = response.syllabus;
-                                return item;
-                              });
-                            } catch (actionError) {
-                              setError(actionError instanceof Error ? actionError.message : '提交记录失败');
-                            } finally {
-                              setStudyBusy(false);
-                            }
-                          }}
-                        >
-                          {studyBusy ? '处理中...' : '提交记录'}
-                        </Button>
-                      </div>
-                    </section>
-                  </div>
-                </DisabledBlock>
-              )}
-            </article>
           </section>
         ) : null}
       </section>
