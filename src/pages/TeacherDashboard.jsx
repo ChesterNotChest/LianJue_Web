@@ -1,5 +1,6 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
+import TeacherGraphExplorer from '../components/TeacherGraphExplorer';
 import {
   Button,
   DisabledBlock,
@@ -16,6 +17,7 @@ import {
   buildSyllabus,
   buildSyllabusDraft,
   createGraph,
+  getTeacherGraphSnapshot,
   generateFinalMaterial,
   generateMaterialDraft,
   getTeacherDashboardBootstrapData,
@@ -1089,6 +1091,18 @@ export default function TeacherDashboard({ navigate }) {
   const [materialModal, setMaterialModal] = useState({ open: false });
   const [materialUploadFiles, setMaterialUploadFiles] = useState([]);
   const [materialUploadBusy, setMaterialUploadBusy] = useState(false);
+  const [teacherGraphLoading, setTeacherGraphLoading] = useState(false);
+  const [teacherGraphError, setTeacherGraphError] = useState('');
+  const [teacherGraphQuery, setTeacherGraphQuery] = useState('');
+  const [teacherGraphData, setTeacherGraphData] = useState({
+    graphId: null,
+    graphName: '',
+    query: '',
+    snapshot: { nodes: [], edges: [] },
+    paragraphs: [],
+    resultCount: 0,
+  });
+  const [isTeacherGraphOpen, setIsTeacherGraphOpen] = useState(false);
   const latestSyllabusesRef = useRef([]);
   const latestActiveIdRef = useRef(null);
   const latestBuildModalRef = useRef({ open: false });
@@ -1335,9 +1349,6 @@ export default function TeacherDashboard({ navigate }) {
     [active?.dayOneTime, active?.finalData?.day_one, active?.finalData?.period],
   );
 
-  useEffect(() => {
-    setExpandedTeacherWeekId(null);
-  }, [activeId]);
   const buildDraftCurrentWeek = useMemo(
     () => getCurrentWeekIndex(buildModal.draftDayOne || buildTarget?.dayOneTime, buildModal.draftPeriod?.length ?? 0),
     [buildModal.draftDayOne, buildModal.draftPeriod, buildTarget?.dayOneTime],
@@ -1369,6 +1380,76 @@ export default function TeacherDashboard({ navigate }) {
       current.map((item) => (item.syllabusId === syllabusId ? updater(cloneData(item)) : item)),
     );
   };
+
+  const loadTeacherGraph = useCallback(async (syllabus, options = {}) => {
+    if (!syllabus?.graphId) {
+      setTeacherGraphData({
+        graphId: null,
+        graphName: '',
+        query: '',
+        snapshot: { nodes: [], edges: [] },
+        paragraphs: [],
+        resultCount: 0,
+      });
+      setTeacherGraphError('');
+      return;
+    }
+
+    const nextQuery = String(options.query ?? syllabus.title ?? syllabus.graphName ?? '').trim();
+    setTeacherGraphLoading(true);
+    setTeacherGraphError('');
+
+    try {
+      const response = await getTeacherGraphSnapshot({
+        graphId: syllabus.graphId,
+        graphName: syllabus.graphName,
+        query: nextQuery,
+      });
+
+      if (!response.success) {
+        throw new Error(response.errorMessage || '图谱加载失败');
+      }
+
+      setTeacherGraphData(response);
+      setTeacherGraphQuery(response.query || nextQuery);
+    } catch (actionError) {
+      setTeacherGraphError(actionError instanceof Error ? actionError.message : '图谱加载失败');
+      setTeacherGraphData({
+        graphId: syllabus.graphId,
+        graphName: syllabus.graphName ?? '',
+        query: nextQuery,
+        snapshot: { nodes: [], edges: [] },
+        paragraphs: [],
+        resultCount: 0,
+      });
+    } finally {
+      setTeacherGraphLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setExpandedTeacherWeekId(null);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!active) {
+      setTeacherGraphQuery('');
+      setTeacherGraphError('');
+      setTeacherGraphData({
+        graphId: null,
+        graphName: '',
+        query: '',
+        snapshot: { nodes: [], edges: [] },
+        paragraphs: [],
+        resultCount: 0,
+      });
+      return;
+    }
+
+    const defaultQuery = String(active.title || active.graphName || '').trim();
+    setTeacherGraphQuery(defaultQuery);
+    void loadTeacherGraph(active, { query: defaultQuery });
+  }, [active, loadTeacherGraph]);
 
   const changeBuildStep = async (nextStep) => {
     if (!buildTarget) {
@@ -1579,6 +1660,73 @@ export default function TeacherDashboard({ navigate }) {
                 )}
               </article>
 
+              <article className="tile-card tile-slate tile-span-full teacher-graph-tile">
+                <div className="tile-card-head">
+                  <div>
+                    <h3>教学图谱</h3>
+                    <p className="teacher-graph-subcopy">
+                      参考 `llm-wiki-skill` 的力导向图方式，展示当前图谱下与教学主题相关的实体关系子图。
+                    </p>
+                  </div>
+                  <div className="tile-head-controls">
+                    <StatusPill tone={active?.graphId ? 'success' : 'warning'}>
+                      {active?.graphName || '未绑定图谱'}
+                    </StatusPill>
+                    <Button
+                      variant="ghost"
+                      className="button-compact"
+                      disabled={!active?.graphId}
+                      onClick={() => setIsTeacherGraphOpen(true)}
+                    >
+                      全屏
+                    </Button>
+                  </div>
+                </div>
+                {isTeacherVisibleLoading ? (
+                  <LoadingPlaceholder size="panel" />
+                ) : (
+                  <DisabledBlock disabled={!active?.graphId} message="请先为当前教学大纲绑定图谱">
+                    <div className="teacher-graph-toolbar">
+                      <input
+                        className="teacher-graph-query"
+                        value={teacherGraphQuery}
+                        placeholder="输入教学主题或知识点，例如 机器学习 / HDFS / Hadoop"
+                        onChange={(event) => setTeacherGraphQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void loadTeacherGraph(active, { query: teacherGraphQuery });
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="primary"
+                        className="button-compact"
+                        disabled={teacherGraphLoading || !active?.graphId}
+                        onClick={() => {
+                          void loadTeacherGraph(active, { query: teacherGraphQuery });
+                        }}
+                      >
+                        {teacherGraphLoading ? '刷新中...' : '刷新'}
+                      </Button>
+                    </div>
+                    {teacherGraphError ? (
+                      <EmptyState>{teacherGraphError}</EmptyState>
+                    ) : teacherGraphLoading && !(teacherGraphData?.snapshot?.nodes?.length) ? (
+                      <LoadingPlaceholder size="panel" />
+                    ) : (
+                      <TeacherGraphExplorer
+                        snapshot={teacherGraphData.snapshot}
+                        graphName={teacherGraphData.graphName || active?.graphName}
+                        query={teacherGraphData.query || teacherGraphQuery}
+                        paragraphs={teacherGraphData.paragraphs}
+                        height={620}
+                      />
+                    )}
+                  </DisabledBlock>
+                )}
+              </article>
+
               <div className="teacher-side-stack">
                 <article className="tile-card tile-amber tile-third">
                   <div className="tile-card-head">
@@ -1722,6 +1870,62 @@ export default function TeacherDashboard({ navigate }) {
           ) : null}
         </section>
       </MainLayout>
+
+      {isTeacherGraphOpen ? (
+        <div className="teacher-graph-overlay" role="dialog" aria-modal="true" aria-label="教学图谱">
+          <div className="teacher-graph-overlay-header">
+            <div className="teacher-graph-overlay-copy">
+              <h2>教学图谱</h2>
+              <p>{teacherGraphData.graphName || active?.graphName || '当前图谱'}</p>
+            </div>
+            <div className="teacher-graph-overlay-controls">
+              <input
+                className="teacher-graph-query"
+                value={teacherGraphQuery}
+                placeholder="输入教学主题或知识点"
+                onChange={(event) => setTeacherGraphQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void loadTeacherGraph(active, { query: teacherGraphQuery });
+                  }
+                }}
+              />
+              <Button
+                variant="primary"
+                className="button-compact"
+                disabled={teacherGraphLoading || !active?.graphId}
+                onClick={() => {
+                  void loadTeacherGraph(active, { query: teacherGraphQuery });
+                }}
+              >
+                {teacherGraphLoading ? '刷新中...' : '刷新'}
+              </Button>
+              <Button
+                variant="ghost"
+                className="button-compact"
+                onClick={() => setIsTeacherGraphOpen(false)}
+              >
+                关闭
+              </Button>
+            </div>
+          </div>
+          <div className="teacher-graph-overlay-body">
+            {teacherGraphError ? (
+              <EmptyState>{teacherGraphError}</EmptyState>
+            ) : (
+              <TeacherGraphExplorer
+                snapshot={teacherGraphData.snapshot}
+                graphName={teacherGraphData.graphName || active?.graphName}
+                query={teacherGraphData.query || teacherGraphQuery}
+                paragraphs={teacherGraphData.paragraphs}
+                className="is-overlay"
+                height={760}
+              />
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {buildModal.open && buildTarget ? (
         <BuildSyllabusModal
@@ -2158,6 +2362,3 @@ export default function TeacherDashboard({ navigate }) {
     </>
   );
 }
-
-
-

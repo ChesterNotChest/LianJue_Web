@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
+import StudyGraphOverlay from '../components/StudyGraphOverlay';
 import {
   Button,
   DisabledBlock,
@@ -14,6 +15,7 @@ import {
   askQuestion,
   getPersonalSyllabus,
   getLearningProfile,
+  getStudyGraph,
   getStudentDashboardData,
   initPersonalSyllabus,
 } from '../api/learning_api';
@@ -119,7 +121,121 @@ function getPathKey(path = []) {
   return Array.isArray(path) ? path.map((item) => String(item)).join('>') : '';
 }
 
-function buildRecommendationReason(candidate, nodeMap, recommendation) {
+function resolveRecommendationLevel(nodeMap, nodeId, cache = new Map(), stack = new Set()) {
+  if (cache.has(nodeId)) {
+    return cache.get(nodeId);
+  }
+
+  if (stack.has(nodeId)) {
+    return 0;
+  }
+
+  const node = nodeMap.get(nodeId);
+  if (!node) {
+    return 0;
+  }
+
+  stack.add(nodeId);
+  const prerequisites = Array.isArray(node.prerequisites) ? node.prerequisites.map((item) => String(item)) : [];
+  const level = prerequisites.length
+    ? Math.max(...prerequisites.map((item) => resolveRecommendationLevel(nodeMap, item, cache, stack) + 1))
+    : 0;
+  stack.delete(nodeId);
+  cache.set(nodeId, level);
+  return level;
+}
+
+function buildRecommendationDisplay(candidate, nodes = [], edges = []) {
+  const nodeMap = new Map(nodes.map((node) => [String(node.id), node]));
+  const edgeMap = new Map(edges.map((edge) => [`${String(edge.source)}->${String(edge.target)}`, edge]));
+  const primaryPath = Array.isArray(candidate?.path) ? candidate.path.map((item) => String(item)) : [];
+  const primaryPathSet = new Set(primaryPath);
+  const primaryEdgeSet = new Set();
+  const activeNodeSet = new Set(primaryPath);
+  const activeEdgeSet = new Set((candidate?.path_edges ?? []).map((edge) => edge.edge_id));
+  const supportNodeSet = new Set();
+  const levelCache = new Map();
+  const visited = new Set();
+
+  const collectPrerequisites = (nodeId) => {
+    if (visited.has(nodeId)) {
+      return;
+    }
+    visited.add(nodeId);
+
+    const node = nodeMap.get(nodeId);
+    const prerequisites = Array.isArray(node?.prerequisites) ? node.prerequisites.map((item) => String(item)) : [];
+
+    prerequisites.forEach((prerequisiteId) => {
+      activeNodeSet.add(prerequisiteId);
+      if (!primaryPathSet.has(prerequisiteId)) {
+        supportNodeSet.add(prerequisiteId);
+      }
+
+      const edge = edgeMap.get(`${prerequisiteId}->${nodeId}`);
+      if (edge?.edge_id) {
+        activeEdgeSet.add(edge.edge_id);
+      }
+
+      collectPrerequisites(prerequisiteId);
+    });
+  };
+
+  if (Array.isArray(candidate?.path_edges) && candidate.path_edges.length) {
+    candidate.path_edges.forEach((edge) => {
+      if (edge?.edge_id) {
+        primaryEdgeSet.add(edge.edge_id);
+      }
+    });
+  } else {
+    for (let index = 0; index < primaryPath.length - 1; index += 1) {
+      const edge = edgeMap.get(`${primaryPath[index]}->${primaryPath[index + 1]}`);
+      if (edge?.edge_id) {
+        primaryEdgeSet.add(edge.edge_id);
+        activeEdgeSet.add(edge.edge_id);
+      }
+    }
+  }
+
+  primaryPath.forEach(collectPrerequisites);
+
+  const sortNodeIds = (nodeIds = []) => (
+    [...nodeIds].sort((left, right) => (
+      resolveRecommendationLevel(nodeMap, String(left), levelCache) - resolveRecommendationLevel(nodeMap, String(right), levelCache)
+      || String(nodeMap.get(String(left))?.title ?? '').localeCompare(String(nodeMap.get(String(right))?.title ?? ''), 'zh-Hans-CN')
+    ))
+  );
+
+  const startNodeIds = sortNodeIds(
+    [...activeNodeSet].filter((nodeId) => {
+      const prerequisites = Array.isArray(nodeMap.get(nodeId)?.prerequisites)
+        ? nodeMap.get(nodeId).prerequisites.map((item) => String(item))
+        : [];
+      return !prerequisites.some((item) => activeNodeSet.has(item));
+    }),
+  );
+
+  const supportNodeIds = sortNodeIds([...supportNodeSet]);
+  const startNodeSet = new Set(startNodeIds);
+
+  return {
+    primaryPath,
+    primaryPathSet,
+    primaryEdgeSet,
+    activeNodeSet,
+    activeEdgeSet,
+    supportNodeSet,
+    startNodeSet,
+    startNodeIds,
+    startTitles: startNodeIds.map((nodeId) => nodeMap.get(nodeId)?.title ?? nodeId).filter(Boolean),
+    primaryTitles: primaryPath.map((nodeId) => nodeMap.get(nodeId)?.title ?? nodeId).filter(Boolean),
+    supportTitles: supportNodeIds.map((nodeId) => nodeMap.get(nodeId)?.title ?? nodeId).filter(Boolean),
+    targetNodeId: primaryPath.length ? primaryPath[primaryPath.length - 1] : '',
+    targetTitle: primaryPath.length ? (nodeMap.get(primaryPath[primaryPath.length - 1])?.title ?? primaryPath[primaryPath.length - 1]) : '',
+  };
+}
+
+function buildRecommendationReason(candidate, nodeMap, recommendation, display) {
   if (recommendation?.meta?.reason) {
     return recommendation.meta.reason;
   }
@@ -128,9 +244,14 @@ function buildRecommendationReason(candidate, nodeMap, recommendation) {
     return '当前还没有可用的推荐路径。';
   }
 
-  const titles = candidate.path
-    .map((nodeId) => nodeMap.get(String(nodeId))?.title ?? String(nodeId))
-    .filter(Boolean);
+  const titles = display?.primaryTitles?.length
+    ? display.primaryTitles
+    : candidate.path.map((nodeId) => nodeMap.get(String(nodeId))?.title ?? String(nodeId)).filter(Boolean);
+  const supportTitles = display?.supportTitles ?? [];
+
+  if (supportTitles.length) {
+    return `推荐理由：当前最佳候选的主路径是 ${titles.join(' -> ')}，但要真正到达目标节点，还需要先补 ${supportTitles.join('、')} 这些先修知识。`;
+  }
 
   if (titles.length <= 3) {
     return `推荐理由：当前主题已经直接命中核心知识点，系统优先返回这条更短的关键链路：${titles.join(' -> ')}。`;
@@ -241,15 +362,16 @@ function LearningRecommendationPath({
   const bestPathKey = getPathKey(recommendation?.bestPath?.path ?? candidates[0]?.path ?? []);
   const currentPathKey = activePathKey || bestPathKey;
   const activeCandidate = candidates.find((candidate) => getPathKey(candidate.path) === currentPathKey) ?? candidates[0] ?? null;
-  const activePathNodeSet = new Set((activeCandidate?.path ?? []).map((item) => String(item)));
-  const activePathEdgeSet = new Set((activeCandidate?.path_edges ?? []).map((edge) => edge.edge_id));
   const columns = buildRecommendationColumns(nodes);
   const treeLayout = buildRecommendationTreeLayout(columns);
   const nodeMap = new Map(nodes.map((node) => [String(node.id), node]));
-  const recommendationReason = buildRecommendationReason(activeCandidate, nodeMap, recommendation);
-  const activePathTitles = (activeCandidate?.path ?? [])
-    .map((nodeId) => nodeMap.get(String(nodeId))?.title ?? String(nodeId))
-    .filter(Boolean);
+  const activeDisplay = buildRecommendationDisplay(activeCandidate, nodes, recommendation?.graph?.edges ?? []);
+  const recommendationReason = buildRecommendationReason(activeCandidate, nodeMap, recommendation, activeDisplay);
+  const activePathEdgeSet = activeDisplay.activeEdgeSet;
+  const primaryPathNodeSet = activeDisplay.primaryPathSet;
+  const primaryPathEdgeSet = activeDisplay.primaryEdgeSet;
+  const supportNodeSet = activeDisplay.supportNodeSet;
+  const activePathTitles = activeDisplay.primaryTitles;
 
   return (
     <div className="recommendation-panel">
@@ -292,12 +414,28 @@ function LearningRecommendationPath({
 
       {activePathTitles.length ? (
         <div className="recommendation-focus-strip" aria-label="当前推荐主路径">
-          {activePathTitles.map((title, index) => (
-            <div key={`${title}-${index + 1}`} className="recommendation-focus-step">
-              <span className="recommendation-focus-index">{index + 1}</span>
-              <strong>{title}</strong>
+          {activeDisplay.startTitles.length ? (
+            <div className="recommendation-focus-item">
+              <span className="recommendation-focus-label">起点</span>
+              <strong>{activeDisplay.startTitles.join('、')}</strong>
             </div>
-          ))}
+          ) : null}
+          <div className="recommendation-focus-item">
+            <span className="recommendation-focus-label">主路径</span>
+            <strong>{activePathTitles.join(' → ')}</strong>
+          </div>
+          {activeDisplay.supportTitles.length ? (
+            <div className="recommendation-focus-item">
+              <span className="recommendation-focus-label">必经先修</span>
+              <strong>{activeDisplay.supportTitles.join('、')}</strong>
+            </div>
+          ) : null}
+          {activeDisplay.targetTitle ? (
+            <div className="recommendation-focus-item">
+              <span className="recommendation-focus-label">目标</span>
+              <strong>{activeDisplay.targetTitle}</strong>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -310,7 +448,7 @@ function LearningRecommendationPath({
         <>
           <div className="recommendation-tree-head">
             <strong>推荐路径树</strong>
-            <span>高亮节点表示当前选中的最佳学习链路。</span>
+            <span>深色高亮是主路径，浅色高亮是完成目标所需的先修节点。</span>
           </div>
           <div className="recommendation-tree-scroll">
             <div
@@ -366,7 +504,11 @@ function LearningRecommendationPath({
                     <path
                       key={edge.edge_id}
                       d={pathData}
-                      className={activePathEdgeSet.has(edge.edge_id) ? 'recommendation-tree-edge is-active' : 'recommendation-tree-edge'}
+                      className={[
+                        'recommendation-tree-edge',
+                        primaryPathEdgeSet.has(edge.edge_id) ? 'is-active' : '',
+                        !primaryPathEdgeSet.has(edge.edge_id) && activePathEdgeSet.has(edge.edge_id) ? 'is-support' : '',
+                      ].filter(Boolean).join(' ')}
                     />
                   );
                 })}
@@ -394,16 +536,29 @@ function LearningRecommendationPath({
                   return null;
                 }
 
-                const isActiveNode = activePathNodeSet.has(nodeId);
-                const stepIndex = activeCandidate?.path?.findIndex((item) => String(item) === nodeId) ?? -1;
-                const stepLabel = stepIndex >= 0
-                  ? (stepIndex === activePathTitles.length - 1 ? '目标节点' : stepIndex === 0 ? '起点节点' : '推荐节点')
-                  : '可衔接';
+                const isPrimaryNode = primaryPathNodeSet.has(nodeId);
+                const isSupportNode = supportNodeSet.has(nodeId);
+                const stepIndex = activeDisplay.primaryPath.findIndex((item) => String(item) === nodeId);
+                let stepLabel = '可衔接';
+
+                if (nodeId === activeDisplay.targetNodeId) {
+                  stepLabel = '目标节点';
+                } else if (isSupportNode && activeDisplay.startNodeSet.has(nodeId)) {
+                  stepLabel = '起点基础';
+                } else if (isSupportNode) {
+                  stepLabel = '必经先修';
+                } else if (isPrimaryNode) {
+                  stepLabel = '主路径';
+                }
 
                 return (
                   <article
                     key={nodeId}
-                    className={['recommendation-tree-node', isActiveNode ? 'is-active-node' : ''].filter(Boolean).join(' ')}
+                    className={[
+                      'recommendation-tree-node',
+                      isPrimaryNode ? 'is-active-node' : '',
+                      isSupportNode ? 'is-support-node' : '',
+                    ].filter(Boolean).join(' ')}
                     style={{
                       left: `${position.x}px`,
                       top: `${position.y}px`,
@@ -411,10 +566,22 @@ function LearningRecommendationPath({
                       minHeight: `${position.height}px`,
                     }}
                   >
-                    <div className={['recommendation-tree-circle', isActiveNode ? 'is-active-circle' : ''].filter(Boolean).join(' ')}>
-                      {isActiveNode ? <span className="recommendation-tree-step">{stepIndex + 1}</span> : <span className="recommendation-tree-dot" />}
+                    <div
+                      className={[
+                        'recommendation-tree-circle',
+                        isPrimaryNode ? 'is-active-circle' : '',
+                        isSupportNode ? 'is-support-circle' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      {isPrimaryNode ? <span className="recommendation-tree-step">{stepIndex + 1}</span> : <span className="recommendation-tree-dot" />}
                     </div>
-                    <div className={['recommendation-tree-label', isActiveNode ? 'is-active-label' : ''].filter(Boolean).join(' ')}>
+                    <div
+                      className={[
+                        'recommendation-tree-label',
+                        isPrimaryNode ? 'is-active-label' : '',
+                        isSupportNode ? 'is-support-label' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
                       <span className="recommendation-tree-node-meta">{stepLabel}</span>
                       <strong className="recommendation-tree-title">{node.title}</strong>
                     </div>
@@ -585,6 +752,44 @@ function createEmptyLearningProfile(userId = null, syllabusId = null) {
   };
 }
 
+function createEmptyStudyGraphBundle(userId = null, syllabusId = null) {
+  return {
+    success: true,
+    userId,
+    syllabusId,
+    treeId: syllabusId && userId ? `study_tree:${userId}:${syllabusId}` : null,
+    tree: {
+      tree_id: syllabusId && userId ? `study_tree:${userId}:${syllabusId}` : null,
+      subject_title: '',
+      title: '',
+      virtual_root: {
+        node_id: syllabusId && userId ? `study_tree_root:${userId}:${syllabusId}` : 'study_tree_root',
+        title: '',
+      },
+      nodes: [],
+      edges: [],
+      summary: {
+        learned_node_count: 0,
+        mastered_node_count: 0,
+        weak_node_count: 0,
+        tree_growth: 0,
+      },
+    },
+    features: {
+      learned_topics: [],
+      weak_topics: [],
+      mastered_topics: [],
+      recently_grown: [],
+      stale_topics: [],
+      tree_growth: 0,
+      updated_at: 0,
+    },
+    debug: {},
+    errorMessage: '',
+    errorCode: '',
+  };
+}
+
 export default function StudentDashboard({ navigate }) {
   const [syllabuses, setSyllabuses] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -605,6 +810,9 @@ export default function StudentDashboard({ navigate }) {
     selected: [],
     bestPath: null,
   });
+  const [studyGraphLoading, setStudyGraphLoading] = useState(false);
+  const [studyGraphError, setStudyGraphError] = useState('');
+  const [studyGraphBundle, setStudyGraphBundle] = useState(() => createEmptyStudyGraphBundle());
   const [activeRecommendationPathKey, setActiveRecommendationPathKey] = useState('');
   const [expandedTimelineWeekId, setExpandedTimelineWeekId] = useState(null);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
@@ -770,6 +978,8 @@ export default function StudentDashboard({ navigate }) {
       bestPath: null,
     });
     setActiveRecommendationPathKey('');
+    setStudyGraphError('');
+    setStudyGraphBundle(createEmptyStudyGraphBundle(getCurrentUserId(), activeId));
   }, [activeId]);
 
   useEffect(() => {
@@ -825,6 +1035,50 @@ export default function StudentDashboard({ navigate }) {
       cancelled = true;
     };
   }, [active?.isLearning, active?.personalSyllabus, active?.syllabusId, active?.title, isBooting, learningProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStudyGraph() {
+      if (!active?.syllabusId || isBooting) {
+        return;
+      }
+
+      setStudyGraphLoading(true);
+      setStudyGraphError('');
+
+      try {
+        const response = await getStudyGraph({
+          syllabusId: active.syllabusId,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.success) {
+          throw new Error(response.errorMessage || '个人知识树加载失败');
+        }
+
+        setStudyGraphBundle(response);
+      } catch (loadError) {
+        if (!cancelled) {
+          setStudyGraphError(loadError instanceof Error ? loadError.message : '个人知识树加载失败');
+          setStudyGraphBundle(createEmptyStudyGraphBundle(getCurrentUserId(), active.syllabusId));
+        }
+      } finally {
+        if (!cancelled) {
+          setStudyGraphLoading(false);
+        }
+      }
+    }
+
+    void loadStudyGraph();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.syllabusId, isBooting]);
 
   const patchActive = (updater) => {
     setSyllabuses((current) => current.map((item) => (
@@ -1188,6 +1442,66 @@ export default function StudentDashboard({ navigate }) {
                               setRecommendationLoading(false);
                             }
                           }}
+                        />
+                      )}
+                    </DisabledBlock>
+                  )}
+                </section>
+
+                <section className="student-surface student-surface-study-graph">
+                  <div className="student-surface-head">
+                    <div className="student-surface-head-copy">
+                      <p className="student-section-kicker">Study Graph</p>
+                      <h3>个人知识树</h3>
+                      <p className="student-section-subcopy">按当前课程下的真实成长树，查看知识节点之间的掌握关系与演化状态。</p>
+                    </div>
+                    <div className="tile-head-controls">
+                      <Button
+                        variant="primary"
+                        className="button-compact"
+                        disabled={studyGraphLoading || !active?.syllabusId}
+                        onClick={async () => {
+                          if (!active?.syllabusId) {
+                            return;
+                          }
+
+                          setStudyGraphLoading(true);
+                          setStudyGraphError('');
+
+                          try {
+                            const response = await getStudyGraph({
+                              syllabusId: active.syllabusId,
+                            });
+
+                            if (!response.success) {
+                              throw new Error(response.errorMessage || '个人知识树加载失败');
+                            }
+
+                            setStudyGraphBundle(response);
+                          } catch (actionError) {
+                            setStudyGraphError(actionError instanceof Error ? actionError.message : '个人知识树加载失败');
+                          } finally {
+                            setStudyGraphLoading(false);
+                          }
+                        }}
+                      >
+                        {studyGraphLoading ? '刷新中...' : '刷新'}
+                      </Button>
+                    </div>
+                  </div>
+                  {isStudentLoading || studyGraphLoading ? (
+                    <LoadingPlaceholder size="panel" />
+                  ) : (
+                    <DisabledBlock disabled={disabled} message="请先选择学习后查看个人知识树">
+                      {studyGraphError ? (
+                        <EmptyState>{studyGraphError}</EmptyState>
+                      ) : (studyGraphBundle?.tree?.nodes?.length ?? 0) === 0 ? (
+                        <EmptyState>当前用户还没有生成个人知识树节点。</EmptyState>
+                      ) : (
+                        <StudyGraphOverlay
+                          inline
+                          bundle={studyGraphBundle}
+                          height={640}
                         />
                       )}
                     </DisabledBlock>

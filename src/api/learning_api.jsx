@@ -69,6 +69,18 @@ function parseLearningProfileResponse(response) {
   };
 }
 
+function parseStudyGraphResponse(response) {
+  return {
+    success: Boolean(response?.success),
+    treeId: response?.tree_id ?? response?.tree?.tree_id ?? null,
+    tree: response?.tree ?? null,
+    features: response?.features ?? null,
+    debug: response?.debug ?? null,
+    errorMessage: response?.error_message ?? '',
+    errorCode: response?.error_code ?? '',
+  };
+}
+
 function formatWeekLabel(weekIndexList = []) {
   return weekIndexList.length ? `week ${weekIndexList.join(', ')}` : '';
 }
@@ -102,7 +114,7 @@ function normalizeRecommendationKey(value) {
 
   return value
     .trim()
-    .replace(/^[\s\[({]+|[\s\])}]+$/g, '')
+    .replace(/^[\s[({]+|[\s)\]}]+$/g, '')
     .replace(/\.[^.]+$/, '')
     .toLowerCase()
     .replace(/[\s_\-+./()[\]{}]+/g, '');
@@ -242,7 +254,11 @@ function updateRecommendationMemory(userId, syllabusId, currentItems) {
   });
 
   saveRecommendationMemory(userId, syllabusId, nextItems);
-  return nextItems.map(({ staleAskCount, ...item }) => item);
+  return nextItems.map((item) => {
+    const cleaned = { ...item };
+    delete cleaned.staleAskCount;
+    return cleaned;
+  });
 }
 
 async function buildRecommendationItemsByFileIds(fileIds = [], syllabusFiles = []) {
@@ -411,6 +427,108 @@ export async function getLearningProfileRaw(payload = {}) {
   };
 }
 
+export async function getStudyGraphRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
+
+  if (!USE_MOCK_API) {
+    return apiPost('/api/learning_study_graph', {
+      user_id: userId,
+      syllabus_id: syllabusId,
+      include_debug: payload.includeDebug ?? payload.include_debug ?? false,
+    });
+  }
+
+  return {
+    success: true,
+    user_id: userId,
+    syllabus_id: syllabusId,
+    tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
+    tree: {
+      tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
+      subject_title: '大数据概论',
+      title: '大数据概论学习成长树',
+      virtual_root: {
+        node_id: `study_tree_root:${userId}:${syllabusId ?? 1}`,
+        title: '大数据概论',
+      },
+      nodes: [
+        {
+          node_id: `knowledge:${userId}:${syllabusId ?? 1}:machine-learning`,
+          title: '机器学习',
+          summary: '课程中逐步建立的核心主题。',
+          mastery: { label: 'normal', score: 0.68 },
+          display: { stage: 'branch' },
+          last_updated_at: 1760000000,
+        },
+        {
+          node_id: `knowledge:${userId}:${syllabusId ?? 1}:supervised-learning`,
+          title: '监督学习',
+          summary: '已经触达，但还需要通过练习继续巩固。',
+          mastery: { label: 'learning', score: 0.54 },
+          display: { stage: 'growing' },
+          last_updated_at: 1760000000,
+        },
+        {
+          node_id: `knowledge:${userId}:${syllabusId ?? 1}:rowkey-hotspot`,
+          title: 'RowKey 热点',
+          summary: '当前画像和作答表现显示这里相对薄弱。',
+          mastery: { label: 'weak', score: 0.28 },
+          display: { stage: 'seed' },
+          last_updated_at: 1760000000,
+        },
+        {
+          node_id: `knowledge:${userId}:${syllabusId ?? 1}:pre-split`,
+          title: '预分区策略',
+          summary: '和热点规避关联较强，最近有明显增长。',
+          mastery: { label: 'mastered', score: 0.86 },
+          display: { stage: 'fruit' },
+          last_updated_at: 1760000000,
+        },
+      ],
+      edges: [
+        {
+          edge_id: `study_tree:${userId}:${syllabusId ?? 1}:parent_of:machine-learning:supervised-learning`,
+          source: `knowledge:${userId}:${syllabusId ?? 1}:machine-learning`,
+          target: `knowledge:${userId}:${syllabusId ?? 1}:supervised-learning`,
+          edge_type: 'parent_of',
+        },
+        {
+          edge_id: `study_tree:${userId}:${syllabusId ?? 1}:parent_of:supervised-learning:rowkey-hotspot`,
+          source: `knowledge:${userId}:${syllabusId ?? 1}:supervised-learning`,
+          target: `knowledge:${userId}:${syllabusId ?? 1}:rowkey-hotspot`,
+          edge_type: 'parent_of',
+        },
+        {
+          edge_id: `study_tree:${userId}:${syllabusId ?? 1}:parent_of:rowkey-hotspot:pre-split`,
+          source: `knowledge:${userId}:${syllabusId ?? 1}:rowkey-hotspot`,
+          target: `knowledge:${userId}:${syllabusId ?? 1}:pre-split`,
+          edge_type: 'parent_of',
+        },
+      ],
+      summary: {
+        learned_node_count: 4,
+        mastered_node_count: 1,
+        weak_node_count: 1,
+        tree_growth: 0.59,
+      },
+    },
+    features: {
+      tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
+      learned_topics: ['机器学习', '监督学习', 'RowKey 热点', '预分区策略'],
+      weak_topics: ['RowKey 热点'],
+      mastered_topics: ['预分区策略'],
+      recently_grown: ['预分区策略', '监督学习'],
+      stale_topics: [],
+      tree_growth: 0.59,
+      updated_at: 1760000000,
+    },
+    debug: {},
+    error_message: '',
+    error_code: '',
+  };
+}
+
 export async function initPersonalSyllabusRaw(payload = {}) {
   const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
   if (!USE_MOCK_API) {
@@ -502,6 +620,10 @@ export async function getLearningProfile(payload = {}) {
   return parseLearningProfileResponse(await getLearningProfileRaw(payload));
 }
 
+export async function getStudyGraph(payload = {}) {
+  return parseStudyGraphResponse(await getStudyGraphRaw(payload));
+}
+
 export async function askQuestion(payload = {}) {
   const parsed = parseAskQuestionResponse(await askQuestionRaw(payload));
   const syllabusFiles = payload.syllabusId ? await listSyllabusFiles([payload.syllabusId]) : [];
@@ -525,6 +647,7 @@ export async function askQuestion(payload = {}) {
 export {
   parseAskQuestionResponse,
   parseLearningProfileResponse,
+  parseStudyGraphResponse,
   parseInitPersonalSyllabusResponse,
   parsePersonalSyllabusResponse,
   parseStudentSyllabusListResponse,

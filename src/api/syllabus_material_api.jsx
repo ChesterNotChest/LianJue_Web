@@ -152,6 +152,23 @@ function parseGraphMutationResponse(response) {
   };
 }
 
+function parseTeacherGraphSnapshotResponse(response) {
+  return {
+    success: Boolean(response?.success),
+    graphId: response?.graph_id ?? null,
+    graphName: response?.graph_name ?? '',
+    query: response?.query ?? '',
+    snapshot: {
+      nodes: Array.isArray(response?.snapshot?.nodes) ? response.snapshot.nodes : [],
+      edges: Array.isArray(response?.snapshot?.edges) ? response.snapshot.edges : [],
+    },
+    paragraphs: Array.isArray(response?.paragraphs) ? response.paragraphs : [],
+    resultCount: Number(response?.result_count ?? 0),
+    errorMessage: response?.error_message ?? '',
+    errorCode: response?.error_code ?? '',
+  };
+}
+
 function parseMaterialMutationResponse(response) {
   return {
     success: Boolean(response?.success),
@@ -607,6 +624,101 @@ export async function listGraphs() {
 
 export async function createGraph(payload = {}) {
   return parseGraphMutationResponse(await createGraphRaw(payload));
+}
+
+export async function getTeacherGraphSnapshotRaw(payload = {}) {
+  const graphId = payload.graphId ?? payload.graph_id ?? null;
+  const query = String(payload.query ?? '').trim();
+  const topK = Number(payload.topK ?? payload.top_k ?? 8) || 8;
+
+  if (!USE_MOCK_API) {
+    return apiPost('/api/job_graph_snapshot', {
+      graph_id: graphId,
+      query,
+      top_k: topK,
+    });
+  }
+
+  const resolvedQuery = query || '机器学习';
+  const focusTitle = resolvedQuery.includes('HDFS') ? 'HDFS' : resolvedQuery.includes('Hadoop') ? 'Hadoop' : '机器学习';
+  const graphName = payload.graphName ?? '教学图谱';
+
+  return {
+    success: true,
+    graph_id: graphId,
+    graph_name: graphName,
+    query: resolvedQuery,
+    snapshot: {
+      nodes: [
+        {
+          id: `${focusTitle}-1`,
+          title: focusTitle,
+          summary: '当前检索主题命中的核心实体。',
+          score: 0.94,
+          group: 'focus',
+          is_matched: true,
+        },
+        {
+          id: `${focusTitle}-2`,
+          title: focusTitle === '机器学习' ? '监督学习' : '数据存储',
+          summary: '与当前主题关联紧密的关键概念。',
+          score: 0.82,
+          group: 'focus',
+          is_matched: true,
+        },
+        {
+          id: `${focusTitle}-3`,
+          title: focusTitle === '机器学习' ? '特征工程' : '分布式计算',
+          summary: '在教学材料中多次共同出现的关联实体。',
+          score: 0.72,
+          group: 'context',
+          is_matched: false,
+        },
+        {
+          id: `${focusTitle}-4`,
+          title: focusTitle === '机器学习' ? '模型评估' : '数据副本',
+          summary: '可作为进一步展开讲解的关联知识点。',
+          score: 0.66,
+          group: 'context',
+          is_matched: false,
+        },
+      ],
+      edges: [
+        {
+          id: `${focusTitle}-edge-1`,
+          source: `${focusTitle}-1`,
+          target: `${focusTitle}-2`,
+          label: '核心关联',
+          weight: 1,
+        },
+        {
+          id: `${focusTitle}-edge-2`,
+          source: `${focusTitle}-2`,
+          target: `${focusTitle}-3`,
+          label: '延伸知识',
+          weight: 1,
+        },
+        {
+          id: `${focusTitle}-edge-3`,
+          source: `${focusTitle}-2`,
+          target: `${focusTitle}-4`,
+          label: '支撑概念',
+          weight: 1,
+        },
+      ],
+    },
+    paragraphs: [
+      `${focusTitle}：教师侧图谱检索会根据当前主题返回一个可视化子图。`,
+      '该子图用于展示命中实体及其关键关系，适合课堂讲解与大纲构建。',
+    ],
+    result_count: 4,
+    error_message: '',
+    error_code: '',
+  };
+}
+
+export async function getTeacherGraphSnapshot(payload = {}) {
+  return parseTeacherGraphSnapshotResponse(await getTeacherGraphSnapshotRaw(payload));
 }
 
 export async function uploadCalendar(payload = {}) {
