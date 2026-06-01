@@ -1117,6 +1117,7 @@ a {
 
 .student-surface-path,
 .student-surface-qa,
+.student-surface-materials,
 .student-surface-syllabus {
   max-width: 824px;
 }
@@ -1369,6 +1370,186 @@ a {
 
 .study-tree-empty {
   max-width: 824px;
+}
+
+.generated-resource-workbench {
+  display: grid;
+  gap: 18px;
+}
+
+.generated-resource-form {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 252, 247, 0.78);
+}
+
+.generated-resource-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.generated-resource-type-chip {
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.generated-resource-type-chip:hover {
+  transform: translateY(-1px);
+}
+
+.generated-resource-type-chip.is-active {
+  border-color: rgba(32, 88, 71, 0.24);
+  background: rgba(32, 88, 71, 0.08);
+  color: var(--brand);
+}
+
+.generated-resource-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.generated-resource-list-panel,
+.generated-resource-detail-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.generated-resource-panel-head,
+.generated-resource-list-top,
+.generated-resource-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.generated-resource-panel-head span,
+.generated-resource-list-top span,
+.generated-resource-detail-head p,
+.generated-resource-list-item small,
+.generated-resource-detail-meta,
+.generated-resource-detail-meta small {
+  color: var(--muted);
+}
+
+.generated-resource-list {
+  display: grid;
+  gap: 10px;
+}
+
+.generated-resource-list-item {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 252, 247, 0.76);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.generated-resource-list-item:hover {
+  transform: translateY(-1px);
+}
+
+.generated-resource-list-item.is-active {
+  border-color: rgba(32, 88, 71, 0.22);
+  background: rgba(226, 241, 235, 0.62);
+}
+
+.generated-resource-preview,
+.generated-resource-section-list,
+.generated-resource-slide-list {
+  display: grid;
+  gap: 12px;
+}
+
+.generated-resource-preview-intro {
+  display: grid;
+  gap: 10px;
+}
+
+.generated-resource-section-card,
+.generated-resource-slide-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 251, 245, 0.78);
+}
+
+.generated-resource-slide-card > span {
+  color: rgba(32, 88, 71, 0.72);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.generated-resource-bullet-list,
+.generated-resource-option-list,
+.generated-resource-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.generated-resource-bullet-list span,
+.generated-resource-option-list span,
+.generated-resource-tag-row span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(32, 88, 71, 0.08);
+  color: var(--text);
+}
+
+.generated-resource-markdown {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(22, 31, 35, 0.94);
+  color: #eef5f3;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88rem;
+  line-height: 1.68;
+}
+
+.generated-resource-tree-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.generated-resource-tree-list li {
+  color: var(--text);
+}
+
+.generated-resource-related {
+  display: grid;
+  gap: 12px;
 }
 
 .student-surface .response-panel,
@@ -3115,7 +3296,8 @@ a {
   .student-dashboard-hero-stats,
   .student-identity-scoreband,
   .student-identity-facts,
-  .student-profile-metrics {
+  .student-profile-metrics,
+  .generated-resource-layout {
     grid-template-columns: 1fr;
   }
 
@@ -3132,7 +3314,10 @@ a {
   .recommendation-toolbar,
   .recommendation-tree-head,
   .student-stage-meter-head,
-  .study-tree-footline {
+  .study-tree-footline,
+  .generated-resource-panel-head,
+  .generated-resource-list-top,
+  .generated-resource-detail-head {
     flex-direction: column;
     align-items: flex-start;
   }

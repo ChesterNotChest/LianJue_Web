@@ -20,6 +20,11 @@ import {
   initPersonalSyllabus,
 } from '../api/learning_api';
 import { getPersonalRecommendation } from '../api/personal_recommendation_api';
+import {
+  getGeneratedResourceDetail,
+  getGeneratedResourceTypeMeta,
+  listGeneratedResources,
+} from '../api/generative_api';
 import { downloadFile } from '../api/file_transmit_api';
 import { getCurrentUserId } from '../api/session';
 
@@ -604,6 +609,256 @@ function LearningRecommendationPath({
   );
 }
 
+function formatResourceTime(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return '刚刚生成';
+  }
+
+  const date = new Date(numericValue * 1000);
+  if (Number.isNaN(date.getTime())) {
+    return '刚刚生成';
+  }
+
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function MindmapNodeList({ nodes = [] }) {
+  if (!Array.isArray(nodes) || !nodes.length) {
+    return null;
+  }
+
+  return (
+    <ul className="generated-resource-tree-list">
+      {nodes.map((node, index) => (
+        <li key={`${node?.label ?? 'node'}-${index + 1}`}>
+          <strong>{node?.label ?? '未命名节点'}</strong>
+          <MindmapNodeList nodes={node?.children ?? []} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function GeneratedResourcePreview({ detail }) {
+  if (!detail) {
+    return <EmptyState>请选择左侧资源查看详情。</EmptyState>;
+  }
+
+  const type = detail.resourceType;
+  const content = detail.content ?? {};
+  const render = detail.render ?? {};
+
+  if (type === 'documents') {
+    return (
+      <div className="generated-resource-preview">
+        <div className="generated-resource-preview-intro">
+          <strong>{content.summary || detail.topic || '讲解文档'}</strong>
+          {render.markdown ? <pre className="generated-resource-markdown">{render.markdown}</pre> : null}
+        </div>
+        <div className="generated-resource-section-list">
+          {(content.sections ?? []).map((section, index) => (
+            <article key={`${section?.heading ?? 'section'}-${index + 1}`} className="generated-resource-section-card">
+              <strong>{section?.heading ?? `章节 ${index + 1}`}</strong>
+              <p>{section?.body ?? '暂无正文。'}</p>
+              {Array.isArray(section?.key_points) && section.key_points.length ? (
+                <div className="generated-resource-tag-row">
+                  {section.key_points.map((item) => <span key={item}>{item}</span>)}
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'mindmap') {
+    return (
+      <div className="generated-resource-preview">
+        <div className="generated-resource-preview-intro">
+          <strong>{content.root || detail.topic || '思维导图'}</strong>
+          {render.mermaid ? <pre className="generated-resource-markdown">{render.mermaid}</pre> : null}
+        </div>
+        <MindmapNodeList nodes={content.nodes ?? []} />
+      </div>
+    );
+  }
+
+  if (type === 'quiz') {
+    return (
+      <div className="generated-resource-preview">
+        <div className="generated-resource-section-list">
+          {(content.questions ?? []).map((question, index) => (
+            <article key={`${question?.id ?? 'q'}-${index + 1}`} className="generated-resource-section-card">
+              <strong>{`${index + 1}. ${question?.stem ?? '未命名题目'}`}</strong>
+              {Array.isArray(question?.options) && question.options.length ? (
+                <div className="generated-resource-option-list">
+                  {question.options.map((option, optionIndex) => (
+                    <span key={`${option}-${optionIndex + 1}`}>{`${String.fromCharCode(65 + optionIndex)}. ${option}`}</span>
+                  ))}
+                </div>
+              ) : null}
+              <p>{`答案：${question?.answer ?? '暂无'}`}</p>
+              <small>{question?.explanation ?? '暂无解析。'}</small>
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'ppt') {
+    return (
+      <div className="generated-resource-preview">
+        <div className="generated-resource-preview-intro">
+          <strong>{content.summary || detail.topic || '复习课件'}</strong>
+        </div>
+        <div className="generated-resource-slide-list">
+          {(content.slides ?? []).map((slide, index) => (
+            <article key={`${slide?.title ?? 'slide'}-${index + 1}`} className="generated-resource-slide-card">
+              <span>{`Slide ${index + 1}`}</span>
+              <strong>{slide?.title ?? '未命名页面'}</strong>
+              <p>{slide?.body ?? '暂无导语。'}</p>
+              {Array.isArray(slide?.bullets) && slide.bullets.length ? (
+                <div className="generated-resource-bullet-list">
+                  {slide.bullets.map((bullet) => <span key={bullet}>{bullet}</span>)}
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'coding_practice') {
+    return (
+      <div className="generated-resource-preview">
+        <div className="generated-resource-section-list">
+          <article className="generated-resource-section-card">
+            <strong>学习目标</strong>
+            <div className="generated-resource-bullet-list">
+              {(content.learning_objectives ?? []).map((item) => <span key={item}>{item}</span>)}
+            </div>
+          </article>
+          <article className="generated-resource-section-card">
+            <strong>实践步骤</strong>
+            <div className="generated-resource-bullet-list">
+              {(content.steps ?? []).map((item) => <span key={item}>{item}</span>)}
+            </div>
+          </article>
+          {(content.code_files ?? []).map((file, index) => (
+            <article key={`${file?.path ?? 'code'}-${index + 1}`} className="generated-resource-section-card">
+              <strong>{file?.path ?? `代码文件 ${index + 1}`}</strong>
+              <pre className="generated-resource-markdown">{file?.content ?? ''}</pre>
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="generated-resource-preview">
+      <pre className="generated-resource-markdown">{JSON.stringify(content, null, 2)}</pre>
+    </div>
+  );
+}
+
+function GeneratedResourceWorkbench({
+  active,
+  loading,
+  resources,
+  selectedResourceId,
+  onSelectResource,
+  detail,
+  detailLoading,
+  recommendationDownloadItems,
+}) {
+  return (
+    <div className="generated-resource-workbench">
+      <div className="generated-resource-layout">
+        <section className="generated-resource-list-panel">
+          <div className="generated-resource-panel-head">
+            <strong>已生成资源</strong>
+            <span>{`${resources.length} 个`}</span>
+          </div>
+          {loading ? (
+            <LoadingPlaceholder size="panel" />
+          ) : resources.length ? (
+            <div className="generated-resource-list">
+              {resources.map((item) => {
+                const meta = getGeneratedResourceTypeMeta(item.resourceType);
+                const isActive = item.resourceId === selectedResourceId;
+                return (
+                  <button
+                    key={item.resourceId}
+                    type="button"
+                    className={['generated-resource-list-item', isActive ? 'is-active' : ''].filter(Boolean).join(' ')}
+                    onClick={() => onSelectResource(item.resourceId)}
+                  >
+                    <div className="generated-resource-list-top">
+                      <StatusPill tone={meta.tone}>{meta.label}</StatusPill>
+                      <span>{formatResourceTime(item.createdAt)}</span>
+                    </div>
+                    <strong>{item.title || item.topic || '未命名资源'}</strong>
+                    <small>{item.topic || active?.title || '当前课程'}</small>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState>当前还没有生成资源。</EmptyState>
+          )}
+        </section>
+
+        <section className="generated-resource-detail-panel">
+          <div className="generated-resource-panel-head">
+            <strong>资源预览</strong>
+            {detail ? (
+              <StatusPill tone={detail.validation?.valid === false ? 'danger' : 'success'}>
+                {detail.status || 'ready'}
+              </StatusPill>
+            ) : null}
+          </div>
+          {detailLoading ? (
+            <LoadingPlaceholder size="panel" />
+          ) : detail ? (
+            <>
+              <div className="generated-resource-detail-head">
+                <div>
+                  <h4>{detail.title || '未命名资源'}</h4>
+                  <p>{detail.topic || active?.title || '当前课程'}</p>
+                </div>
+                <div className="generated-resource-detail-meta">
+                  <span>{formatResourceTime(detail.createdAt)}</span>
+                  {detail.validation?.valid === false ? <small>校验未通过</small> : null}
+                </div>
+              </div>
+              <GeneratedResourcePreview detail={detail} />
+            </>
+          ) : (
+            <EmptyState>请选择左侧资源查看 Agent 产出内容。</EmptyState>
+          )}
+        </section>
+      </div>
+
+      {recommendationDownloadItems.length ? (
+        <div className="generated-resource-related">
+          <strong>关联课内材料</strong>
+          <MaterialShelf items={recommendationDownloadItems} rows={1} emptyText="暂无关联材料。" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LearningProfileRadar({ metrics }) {
   const size = 388;
   const center = size / 2;
@@ -813,6 +1068,12 @@ export default function StudentDashboard({ navigate }) {
   const [studyGraphLoading, setStudyGraphLoading] = useState(false);
   const [studyGraphError, setStudyGraphError] = useState('');
   const [studyGraphBundle, setStudyGraphBundle] = useState(() => createEmptyStudyGraphBundle());
+  const [generatedResources, setGeneratedResources] = useState([]);
+  const [generatedResourcesLoading, setGeneratedResourcesLoading] = useState(false);
+  const [generatedResourcesError, setGeneratedResourcesError] = useState('');
+  const [selectedGeneratedResourceId, setSelectedGeneratedResourceId] = useState('');
+  const [generatedResourceDetail, setGeneratedResourceDetail] = useState(null);
+  const [generatedResourceDetailLoading, setGeneratedResourceDetailLoading] = useState(false);
   const [activeRecommendationPathKey, setActiveRecommendationPathKey] = useState('');
   const [expandedTimelineWeekId, setExpandedTimelineWeekId] = useState(null);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
@@ -957,6 +1218,7 @@ export default function StudentDashboard({ navigate }) {
     () => normalizeProfileMetricValue(learningProfile?.confidence ?? 0),
     [learningProfile],
   );
+  const resourceGenerationDisabled = isBooting || !active;
   const stageProgressPercent = useMemo(() => {
     if (!learningWeekCount || !currentWeekIndex) {
       return 0;
@@ -980,6 +1242,10 @@ export default function StudentDashboard({ navigate }) {
     setActiveRecommendationPathKey('');
     setStudyGraphError('');
     setStudyGraphBundle(createEmptyStudyGraphBundle(getCurrentUserId(), activeId));
+    setGeneratedResources([]);
+    setGeneratedResourcesError('');
+    setSelectedGeneratedResourceId('');
+    setGeneratedResourceDetail(null);
   }, [activeId]);
 
   useEffect(() => {
@@ -1080,6 +1346,95 @@ export default function StudentDashboard({ navigate }) {
     };
   }, [active?.syllabusId, isBooting]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGeneratedResources() {
+      if (!active?.syllabusId || isBooting) {
+        return;
+      }
+
+      setGeneratedResourcesLoading(true);
+      setGeneratedResourcesError('');
+
+      try {
+        const response = await listGeneratedResources({
+          syllabusId: active.syllabusId,
+          limit: 12,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.success) {
+          throw new Error(response.errorMessage || '资源列表加载失败');
+        }
+
+        setGeneratedResources(response.materials);
+        setSelectedGeneratedResourceId((current) => current || response.materials[0]?.resourceId || '');
+      } catch (loadError) {
+        if (!cancelled) {
+          setGeneratedResources([]);
+          setGeneratedResourcesError(loadError instanceof Error ? loadError.message : '资源列表加载失败');
+        }
+      } finally {
+        if (!cancelled) {
+          setGeneratedResourcesLoading(false);
+        }
+      }
+    }
+
+    void loadGeneratedResources();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.syllabusId, isBooting]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGeneratedResourceDetail() {
+      if (!selectedGeneratedResourceId) {
+        setGeneratedResourceDetail(null);
+        return;
+      }
+
+      setGeneratedResourceDetailLoading(true);
+
+      try {
+        const response = await getGeneratedResourceDetail({
+          resourceId: selectedGeneratedResourceId,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.success) {
+          throw new Error(response.errorMessage || '资源详情加载失败');
+        }
+
+        setGeneratedResourceDetail(response.material);
+      } catch {
+        if (!cancelled) {
+          setGeneratedResourceDetail(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setGeneratedResourceDetailLoading(false);
+        }
+      }
+    }
+
+    void loadGeneratedResourceDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedGeneratedResourceId]);
+
   const patchActive = (updater) => {
     setSyllabuses((current) => current.map((item) => (
       item.syllabusId === activeId ? updater(cloneData(item)) : item
@@ -1115,6 +1470,38 @@ export default function StudentDashboard({ navigate }) {
       }
     },
   }));
+
+  const handleRefreshGeneratedResources = async () => {
+    if (!active?.syllabusId) {
+      return;
+    }
+
+    setGeneratedResourcesLoading(true);
+    setGeneratedResourcesError('');
+
+    try {
+      const response = await listGeneratedResources({
+        syllabusId: active.syllabusId,
+        limit: 12,
+      });
+
+      if (!response.success) {
+        throw new Error(response.errorMessage || '资源列表加载失败');
+      }
+
+      setGeneratedResources(response.materials);
+      setSelectedGeneratedResourceId((current) => (
+        response.materials.some((item) => item.resourceId === current)
+          ? current
+          : (response.materials[0]?.resourceId || '')
+      ));
+    } catch (actionError) {
+      setGeneratedResources([]);
+      setGeneratedResourcesError(actionError instanceof Error ? actionError.message : '资源列表加载失败');
+    } finally {
+      setGeneratedResourcesLoading(false);
+    }
+  };
 
   return (
     <MainLayout
@@ -1586,19 +1973,34 @@ export default function StudentDashboard({ navigate }) {
                   <section className="student-surface student-surface-materials">
                     <div className="student-surface-head">
                       <div className="student-surface-head-copy">
-                        <p className="student-section-kicker">Resources</p>
-                        <h3>推荐材料</h3>
-                        <p className="student-section-subcopy">根据默认学习阶段或问答结果，直接提供可下载材料。</p>
+                        <p className="student-section-kicker">Generation</p>
+                        <h3>资源生成</h3>
+                        <p className="student-section-subcopy">这里只展示 Agent 已经产出的学习资源。</p>
                       </div>
-                      <StatusPill tone={questionAsked ? 'success' : 'warning'}>
-                        {questionAsked ? 'AI' : '默认'}
-                      </StatusPill>
+                      <Button
+                        variant="primary"
+                        className="button-compact"
+                        disabled={generatedResourcesLoading || !active?.syllabusId}
+                        onClick={handleRefreshGeneratedResources}
+                      >
+                        {generatedResourcesLoading ? '刷新中...' : '刷新'}
+                      </Button>
                     </div>
                     {isStudentLoading ? (
                       <LoadingPlaceholder size="shelf" />
                     ) : (
-                      <DisabledBlock disabled={disabled} message="请先选择学习">
-                        <MaterialShelf items={recommendationDownloadItems} emptyText="暂无可展示的推荐材料。" />
+                      <DisabledBlock disabled={resourceGenerationDisabled} message="请先选择课程后查看 Agent 产出资源">
+                        {generatedResourcesError ? <EmptyState>{generatedResourcesError}</EmptyState> : null}
+                        <GeneratedResourceWorkbench
+                          active={active}
+                          loading={generatedResourcesLoading}
+                          resources={generatedResources}
+                          selectedResourceId={selectedGeneratedResourceId}
+                          onSelectResource={setSelectedGeneratedResourceId}
+                          detail={generatedResourceDetail}
+                          detailLoading={generatedResourceDetailLoading}
+                          recommendationDownloadItems={recommendationDownloadItems}
+                        />
                       </DisabledBlock>
                     )}
                   </section>
