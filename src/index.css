@@ -1377,42 +1377,6 @@ a {
   gap: 18px;
 }
 
-.generated-resource-form {
-  display: grid;
-  gap: 14px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  border: 1px solid rgba(72, 54, 36, 0.08);
-  background: rgba(255, 252, 247, 0.78);
-}
-
-.generated-resource-type-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.generated-resource-type-chip {
-  border: 1px solid rgba(72, 54, 36, 0.08);
-  background: rgba(255, 255, 255, 0.82);
-  color: var(--muted);
-  padding: 8px 12px;
-  border-radius: 999px;
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 160ms ease, color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.generated-resource-type-chip:hover {
-  transform: translateY(-1px);
-}
-
-.generated-resource-type-chip.is-active {
-  border-color: rgba(32, 88, 71, 0.24);
-  background: rgba(32, 88, 71, 0.08);
-  color: var(--brand);
-}
-
 .generated-resource-layout {
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
@@ -1444,7 +1408,9 @@ a {
 .generated-resource-detail-head p,
 .generated-resource-list-item small,
 .generated-resource-detail-meta,
-.generated-resource-detail-meta small {
+.generated-resource-detail-meta small,
+.generated-resource-manifest-strip span,
+.generated-resource-path-note span {
   color: var(--muted);
 }
 
@@ -1479,6 +1445,44 @@ a {
 .generated-resource-slide-list {
   display: grid;
   gap: 12px;
+}
+
+.generated-resource-manifest-strip,
+.generated-resource-file-strip {
+  display: grid;
+  gap: 12px;
+}
+
+.generated-resource-manifest-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.generated-resource-manifest-strip div,
+.generated-resource-file-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(72, 54, 36, 0.08);
+  background: rgba(255, 251, 245, 0.82);
+}
+
+.generated-resource-file-strip {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.generated-resource-path-note {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(42, 33, 24, 0.04);
+}
+
+.generated-resource-path-note code {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
 }
 
 .generated-resource-preview-intro {
@@ -1740,17 +1744,6 @@ a {
   min-height: 96px;
 }
 
-.graph-picker-panel {
-  align-content: start;
-}
-
-.graph-create-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-}
-
 .teacher-side-stack {
   grid-column: span 4;
   display: grid;
@@ -1759,290 +1752,6 @@ a {
 
 .teacher-side-stack .tile-blue {
   min-height: 318px;
-}
-
-.teacher-graph-tile {
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 10% 10%, rgba(68, 136, 118, 0.08), transparent 22%),
-    linear-gradient(180deg, rgba(249, 246, 240, 0.94) 0%, rgba(244, 239, 230, 0.96) 100%);
-}
-
-.teacher-graph-subcopy {
-  margin: 8px 0 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.teacher-graph-toolbar,
-.teacher-graph-overlay-controls {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.teacher-graph-toolbar {
-  margin-bottom: 16px;
-}
-
-.teacher-graph-query {
-  min-width: min(100%, 380px);
-  flex: 1 1 320px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(18, 29, 35, 0.82);
-  color: #eef6f3;
-  border-radius: 16px;
-  padding: 12px 14px;
-}
-
-.teacher-graph-query::placeholder {
-  color: rgba(219, 232, 228, 0.52);
-}
-
-.teacher-graph-query:focus {
-  outline: 2px solid rgba(145, 232, 211, 0.14);
-  border-color: rgba(145, 232, 211, 0.22);
-}
-
-.teacher-graph-shell {
-  position: relative;
-}
-
-.teacher-graph-stage {
-  position: relative;
-  overflow: hidden;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background:
-    radial-gradient(circle at 16% 10%, rgba(103, 165, 145, 0.16) 0%, transparent 26%),
-    radial-gradient(circle at 86% 12%, rgba(217, 165, 78, 0.12) 0%, transparent 24%),
-    linear-gradient(180deg, rgba(13, 24, 29, 0.98) 0%, rgba(17, 28, 34, 0.98) 52%, rgba(14, 22, 28, 0.98) 100%);
-}
-
-.teacher-graph-stage::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 0.8px, transparent 0.8px);
-  background-size: 22px 22px;
-  opacity: 0.18;
-  pointer-events: none;
-}
-
-.teacher-graph-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.teacher-graph-edge {
-  fill: none;
-  stroke: rgba(118, 160, 152, 0.28);
-  stroke-width: 1.8;
-}
-
-.teacher-graph-edge.is-anchor-edge {
-  stroke: rgba(145, 232, 211, 0.3);
-}
-
-.teacher-graph-edge.is-highlighted {
-  stroke: url(#teacherGraphEdgeGlow);
-  stroke-width: 3.2;
-  filter: drop-shadow(0 0 12px rgba(145, 232, 211, 0.26));
-}
-
-.teacher-graph-edge.is-dimmed,
-.teacher-graph-node.is-dimmed {
-  opacity: 0.18;
-}
-
-.teacher-graph-node {
-  cursor: pointer;
-  transition: opacity 160ms ease;
-}
-
-.teacher-graph-node-core {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke-width: 2.2;
-}
-
-.teacher-graph-node-halo {
-  fill: rgba(145, 232, 211, 0.08);
-}
-
-.teacher-graph-node.group-anchor .teacher-graph-node-core {
-  fill: rgba(224, 246, 239, 0.98);
-  stroke: rgba(145, 232, 211, 0.88);
-}
-
-.teacher-graph-node.group-focus .teacher-graph-node-core {
-  fill: rgba(247, 251, 250, 0.96);
-  stroke: rgba(145, 232, 211, 0.78);
-}
-
-.teacher-graph-node.group-context .teacher-graph-node-core {
-  fill: rgba(252, 246, 234, 0.96);
-  stroke: rgba(221, 190, 122, 0.76);
-}
-
-.teacher-graph-node.is-selected .teacher-graph-node-core,
-.teacher-graph-node.is-active .teacher-graph-node-core {
-  filter: drop-shadow(0 0 16px rgba(145, 232, 211, 0.22));
-}
-
-.teacher-graph-node-title {
-  fill: #f0f7f5;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.teacher-graph-node-score {
-  fill: rgba(219, 232, 228, 0.76);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.teacher-graph-hint {
-  position: absolute;
-  left: 24px;
-  top: 22px;
-  color: rgba(219, 232, 228, 0.62);
-  font-size: 0.84rem;
-  letter-spacing: 0.08em;
-}
-
-.teacher-graph-legend {
-  position: absolute;
-  left: 22px;
-  bottom: 22px;
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(17, 29, 35, 0.74);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #eef6f3;
-  backdrop-filter: blur(14px);
-}
-
-.teacher-graph-legend-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.88rem;
-}
-
-.teacher-graph-legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.teacher-graph-legend-dot.group-anchor {
-  background: #91e8d3;
-}
-
-.teacher-graph-legend-dot.group-focus {
-  background: #c3f2e7;
-}
-
-.teacher-graph-legend-dot.group-context {
-  background: #ddbe7a;
-}
-
-.teacher-graph-inspector {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  width: min(320px, calc(100% - 40px));
-  padding: 20px;
-  border-radius: 20px;
-  background: rgba(17, 29, 35, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #eef6f3;
-  display: grid;
-  gap: 14px;
-  backdrop-filter: blur(16px);
-}
-
-.teacher-graph-inspector-kicker {
-  color: rgba(145, 232, 211, 0.82);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.teacher-graph-inspector h3,
-.teacher-graph-overlay-copy h2 {
-  margin: 0;
-}
-
-.teacher-graph-inspector p,
-.teacher-graph-overlay-copy p {
-  margin: 0;
-  color: rgba(219, 232, 228, 0.74);
-  line-height: 1.68;
-}
-
-.teacher-graph-inspector-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.teacher-graph-inspector-metrics span {
-  display: block;
-  color: rgba(219, 232, 228, 0.58);
-  font-size: 0.78rem;
-  margin-bottom: 4px;
-}
-
-.teacher-graph-inspector-metrics strong {
-  color: #f5fbf9;
-  font-size: 1rem;
-}
-
-.teacher-graph-inspector-notes {
-  display: grid;
-  gap: 10px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.teacher-graph-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 26px;
-  background:
-    radial-gradient(circle at 16% 8%, rgba(103, 165, 145, 0.18) 0%, transparent 26%),
-    radial-gradient(circle at 84% 14%, rgba(217, 165, 78, 0.16) 0%, transparent 28%),
-    linear-gradient(180deg, rgba(13, 24, 29, 0.98) 0%, rgba(17, 28, 34, 0.98) 52%, rgba(14, 22, 28, 0.98) 100%);
-  backdrop-filter: blur(18px) saturate(110%);
-}
-
-.teacher-graph-overlay-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: flex-start;
-  color: #eef6f3;
-}
-
-.teacher-graph-overlay-body {
-  flex: 1;
-  min-height: 0;
-}
-
-.teacher-graph-shell.is-overlay,
-.teacher-graph-shell.is-overlay .teacher-graph-stage {
-  height: 100%;
 }
 
 .stacked-sheet-list,
@@ -3215,7 +2924,6 @@ a {
   }
 
   .teacher-side-stack,
-  .graph-create-row,
   .options-grid,
   .week-checkbox-grid {
     grid-column: span 12;
@@ -3254,8 +2962,7 @@ a {
   .modal-header,
   .stacked-sheet,
   .student-section-head,
-  .student-surface-head,
-  .teacher-graph-overlay-header {
+  .student-surface-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -3322,50 +3029,16 @@ a {
     align-items: flex-start;
   }
 
+  .generated-resource-manifest-strip {
+    grid-template-columns: 1fr;
+  }
+
   .study-tree-legend {
     gap: 10px 14px;
   }
 
   .study-tree-mini-stats {
     gap: 8px 14px;
-  }
-
-  .teacher-graph-toolbar,
-  .teacher-graph-overlay-controls {
-    width: 100%;
-  }
-
-  .teacher-graph-query {
-    min-width: 0;
-    width: 100%;
-    flex-basis: 100%;
-  }
-
-  .teacher-graph-inspector {
-    position: static;
-    width: auto;
-    margin: 18px;
-  }
-
-  .teacher-graph-inspector-metrics {
-    grid-template-columns: 1fr;
-  }
-
-  .teacher-graph-legend {
-    left: 16px;
-    right: 16px;
-    width: auto;
-    bottom: 16px;
-  }
-
-  .teacher-graph-hint {
-    left: 16px;
-    right: 16px;
-    top: 16px;
-  }
-
-  .teacher-graph-overlay {
-    padding: 18px 16px;
   }
 
   .week-axis-card.is-expanded {

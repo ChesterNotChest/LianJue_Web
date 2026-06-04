@@ -3,7 +3,7 @@ import {
   RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7,
   RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7,
 } from './mock_payloads';
-import { USE_MOCK_API, apiPost } from './client';
+import { USE_MOCK_API, apiGet, apiPost } from './client';
 import { getFileDetail, listSyllabusFiles } from './file_transmit_api';
 import { getCurrentUserId, requireUserId } from './session';
 
@@ -32,6 +32,7 @@ function parsePersonalSyllabusResponse(response) {
 
 function parseAskQuestionResponse(response) {
   return {
+    success: Boolean(response?.success),
     answer: response?.answer ?? '',
     matchedFiles: Array.isArray(response?.matched_files) ? response.matched_files : [],
     competanceList: Array.isArray(response?.competance_list) ? response.competance_list : [],
@@ -61,20 +62,105 @@ function parseUpdatePersonalSyllabusResponse(response) {
 }
 
 function parseLearningProfileResponse(response) {
+  const rawProfile = response?.profile ?? response?.learning_profile ?? null;
+  const knowledgeMastery = typeof rawProfile?.knowledge_mastery === 'object' && rawProfile?.knowledge_mastery
+    ? rawProfile.knowledge_mastery
+    : {};
+
   return {
     success: Boolean(response?.success),
-    profile: response?.profile ?? response?.learning_profile ?? null,
+    profile: rawProfile ? {
+      ...rawProfile,
+      knowledge_mastery: {
+        overall_level: knowledgeMastery?.overall_level ?? 'none',
+        overall_score: Number(knowledgeMastery?.overall_score ?? 0) || 0,
+        syllabus_score: Number(knowledgeMastery?.syllabus_score ?? 0) || 0,
+        answer_score: Number(knowledgeMastery?.answer_score ?? 0) || 0,
+        engagement_score: Number(knowledgeMastery?.engagement_score ?? 0) || 0,
+        by_knowledge_point: typeof knowledgeMastery?.by_knowledge_point === 'object' && knowledgeMastery?.by_knowledge_point
+          ? knowledgeMastery.by_knowledge_point
+          : {},
+        knowledge_point_details: typeof knowledgeMastery?.knowledge_point_details === 'object' && knowledgeMastery?.knowledge_point_details
+          ? knowledgeMastery.knowledge_point_details
+          : {},
+        weak_weeks: Array.isArray(knowledgeMastery?.weak_weeks) ? knowledgeMastery.weak_weeks : [],
+        mastered_weeks: Array.isArray(knowledgeMastery?.mastered_weeks) ? knowledgeMastery.mastered_weeks : [],
+      },
+      concept_gaps: Array.isArray(rawProfile?.concept_gaps) ? rawProfile.concept_gaps : [],
+      weak_points: Array.isArray(rawProfile?.weak_points) ? rawProfile.weak_points : [],
+      mastered_points: Array.isArray(rawProfile?.mastered_points) ? rawProfile.mastered_points : [],
+      resource_preference: Array.isArray(rawProfile?.resource_preference) ? rawProfile.resource_preference : [],
+      recent_anomaly: Array.isArray(rawProfile?.recent_anomaly) ? rawProfile.recent_anomaly : [],
+      evidence: Array.isArray(rawProfile?.evidence) ? rawProfile.evidence : [],
+      source_events: Array.isArray(rawProfile?.source_events) ? rawProfile.source_events : [],
+      signals: typeof rawProfile?.signals === 'object' && rawProfile?.signals ? rawProfile.signals : {},
+      suggested_personal_syllabus_updates: Array.isArray(rawProfile?.suggested_personal_syllabus_updates)
+        ? rawProfile.suggested_personal_syllabus_updates
+        : [],
+      confidence: Number(rawProfile?.confidence ?? 0) || 0,
+      dropout_risk_score: Number(rawProfile?.dropout_risk_score ?? 0) || 0,
+    } : null,
     errorMessage: response?.error_message ?? '',
     errorCode: response?.error_code ?? '',
   };
 }
 
-function parseStudyGraphResponse(response) {
+function ensureStudyGraphTree(tree, userId = null, syllabusId = null) {
+  const rawTree = typeof tree === 'object' && tree ? tree : {};
+  const treeId = rawTree.tree_id ?? (userId && syllabusId ? `study_tree:${userId}:${syllabusId}` : null);
+  const subjectTitle = rawTree.subject_title ?? '';
+  const rootTitle = rawTree?.virtual_root?.title ?? subjectTitle ?? '';
+
+  return {
+    schema_version: Number(rawTree.schema_version ?? 1) || 1,
+    tree_id: treeId,
+    user_id: rawTree.user_id ?? userId ?? null,
+    syllabus_id: rawTree.syllabus_id ?? syllabusId ?? null,
+    subject_title: subjectTitle,
+    title: rawTree.title ?? (rootTitle ? `${rootTitle}学习成长树` : ''),
+    virtual_root: {
+      type: rawTree?.virtual_root?.type ?? 'tree_root',
+      node_id: rawTree?.virtual_root?.node_id ?? (treeId ? `${treeId}:virtual_root` : 'study_tree_virtual_root'),
+      title: rootTitle,
+    },
+    nodes: Array.isArray(rawTree.nodes) ? rawTree.nodes : [],
+    edges: Array.isArray(rawTree.edges) ? rawTree.edges : [],
+    summary: typeof rawTree.summary === 'object' && rawTree.summary ? rawTree.summary : {},
+    created_at: rawTree.created_at ?? 0,
+    updated_at: rawTree.updated_at ?? 0,
+  };
+}
+
+function ensureStudyGraphFeatures(features, treeId = null) {
+  const rawFeatures = typeof features === 'object' && features ? features : {};
+
+  return {
+    tree_id: rawFeatures.tree_id ?? treeId ?? null,
+    learned_topics: Array.isArray(rawFeatures.learned_topics) ? rawFeatures.learned_topics : [],
+    weak_topics: Array.isArray(rawFeatures.weak_topics) ? rawFeatures.weak_topics : [],
+    mastered_topics: Array.isArray(rawFeatures.mastered_topics) ? rawFeatures.mastered_topics : [],
+    recently_grown: Array.isArray(rawFeatures.recently_grown) ? rawFeatures.recently_grown : [],
+    stale_topics: Array.isArray(rawFeatures.stale_topics) ? rawFeatures.stale_topics : [],
+    tree_growth: Number(rawFeatures.tree_growth ?? 0) || 0,
+    updated_at: Number(rawFeatures.updated_at ?? 0) || 0,
+  };
+}
+
+function parseStudyGraphResponse(response, options = {}) {
+  const userId = options.userId ?? response?.user_id ?? null;
+  const syllabusId = options.syllabusId ?? response?.syllabus_id ?? null;
+  const tree = ensureStudyGraphTree(response?.tree, userId, syllabusId);
+  const treeId = response?.tree_id ?? tree.tree_id ?? null;
+
   return {
     success: Boolean(response?.success),
-    treeId: response?.tree_id ?? response?.tree?.tree_id ?? null,
-    tree: response?.tree ?? null,
-    features: response?.features ?? null,
+    userId,
+    syllabusId,
+    treeId,
+    tree,
+    features: ensureStudyGraphFeatures(response?.features, treeId),
+    changes: Array.isArray(response?.changes) ? response.changes : [],
+    toolTrace: Array.isArray(response?.tool_trace) ? response.tool_trace : [],
     debug: response?.debug ?? null,
     errorMessage: response?.error_message ?? '',
     errorCode: response?.error_code ?? '',
@@ -386,6 +472,7 @@ export async function askQuestionRaw(payload = {}) {
   }
 
   return {
+    success: true,
     ...cloneData(RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1),
     request: {
       user_id: userId,
@@ -413,26 +500,50 @@ export async function getLearningProfileRaw(payload = {}) {
     success: true,
     profile: {
       user_id: userId,
-      learning_goal: payload.learningGoal ?? 'Not provided',
-      target_level: 'unknown',
-      learning_style: 'unknown',
-      study_frequency: 'unknown',
-      study_duration: 'unknown',
-      bottleneck_topics: [],
-      dropout_risk: 'unknown',
-      knowledge_mastery: {},
+      syllabus_id: payload.syllabusId ?? payload.syllabus_id ?? null,
+      syllabus_scope: [],
+      learning_goal: payload.learningGoal ?? '掌握当前课程核心知识点',
+      knowledge_mastery: {
+        overall_level: 'normal',
+        overall_score: 0.67,
+        syllabus_score: 0.62,
+        answer_score: 0.64,
+        engagement_score: 0.74,
+        by_knowledge_point: {},
+        knowledge_point_details: {
+          机器学习: { score: 0.46, attempt_count: 3, level: 'weak' },
+          监督学习: { score: 0.58, attempt_count: 2, level: 'normal' },
+          特征工程: { score: 0.52, attempt_count: 2, level: 'normal' },
+          模型评估: { score: 0.41, attempt_count: 1, level: 'weak' },
+        },
+        weak_weeks: [4, 5],
+        mastered_weeks: [1, 2, 3, 6],
+      },
+      concept_gaps: ['机器学习', '模型评估'],
+      weak_points: ['机器学习', '模型评估'],
+      mastered_points: ['数据清洗', 'Python 基础'],
+      resource_preference: ['documents', 'mindmap'],
+      learning_style: 'visual-driven',
+      dropout_risk: 'medium',
+      dropout_risk_score: 0.38,
+      recent_anomaly: [],
+      confidence: 0.72,
+      evidence: [],
+      source_events: [],
+      signals: {},
+      suggested_personal_syllabus_updates: [],
     },
     error_message: '',
     error_code: '',
   };
 }
 
-export async function getStudyGraphRaw(payload = {}) {
+export async function getStudyGraphDetailRaw(payload = {}) {
   const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
   const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
 
   if (!USE_MOCK_API) {
-    return apiPost('/api/learning_study_graph', {
+    return apiGet('/api/study_graph/detail', {
       user_id: userId,
       syllabus_id: syllabusId,
       include_debug: payload.includeDebug ?? payload.include_debug ?? false,
@@ -445,10 +556,14 @@ export async function getStudyGraphRaw(payload = {}) {
     syllabus_id: syllabusId,
     tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
     tree: {
+      schema_version: 1,
       tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
+      user_id: userId,
+      syllabus_id: syllabusId,
       subject_title: '大数据概论',
       title: '大数据概论学习成长树',
       virtual_root: {
+        type: 'tree_root',
         node_id: `study_tree_root:${userId}:${syllabusId ?? 1}`,
         title: '大数据概论',
       },
@@ -513,6 +628,28 @@ export async function getStudyGraphRaw(payload = {}) {
         tree_growth: 0.59,
       },
     },
+    debug: {},
+    error_message: '',
+    error_code: '',
+  };
+}
+
+export async function getStudyGraphFeaturesRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
+
+  if (!USE_MOCK_API) {
+    return apiGet('/api/study_graph/features', {
+      user_id: userId,
+      syllabus_id: syllabusId,
+    });
+  }
+
+  return {
+    success: true,
+    user_id: userId,
+    syllabus_id: syllabusId,
+    tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
     features: {
       tree_id: `study_tree:${userId}:${syllabusId ?? 1}`,
       learned_topics: ['机器学习', '监督学习', 'RowKey 热点', '预分区策略'],
@@ -523,9 +660,113 @@ export async function getStudyGraphRaw(payload = {}) {
       tree_growth: 0.59,
       updated_at: 1760000000,
     },
-    debug: {},
     error_message: '',
     error_code: '',
+  };
+}
+
+export async function runStudyGraphAgentRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
+
+  if (!USE_MOCK_API) {
+    return apiPost('/api/study_graph/agent_run', {
+      dispatch_id: payload.dispatchId ?? payload.dispatch_id ?? '',
+      source_kind: payload.sourceKind ?? payload.source_kind ?? 'total_agent',
+      user_id: userId,
+      syllabus_id: syllabusId,
+      subject_title: payload.subjectTitle ?? payload.subject_title ?? '',
+      question: payload.question ?? '',
+      learning_goal: payload.learningGoal ?? payload.learning_goal ?? '',
+      personal_syllabus_context: payload.personalSyllabusContext ?? payload.personal_syllabus_context ?? {},
+      rag_context: payload.ragContext ?? payload.rag_context ?? [],
+      detected_topics: payload.detectedTopics ?? payload.detected_topics ?? [],
+      events: payload.events ?? [],
+      parent_candidates: payload.parentCandidates ?? payload.parent_candidates ?? [],
+      source: payload.source ?? { kind: payload.sourceKind ?? payload.source_kind ?? 'total_agent' },
+      timestamp: payload.timestamp ?? null,
+    });
+  }
+
+  const detail = await getStudyGraphDetailRaw({ userId, syllabusId });
+  const features = await getStudyGraphFeaturesRaw({ userId, syllabusId });
+
+  return {
+    success: true,
+    user_id: userId,
+    syllabus_id: syllabusId,
+    tree_id: detail?.tree_id ?? `study_tree:${userId}:${syllabusId ?? 1}`,
+    tree: detail?.tree ?? null,
+    features: features?.features ?? null,
+    changes: [
+      {
+        client_change_id: `mock-change:${userId}:${syllabusId ?? 1}:1`,
+        title: 'RowKey 热点',
+        status: 'accepted',
+        confidence: 0.78,
+      },
+    ],
+    tool_trace: [
+      'rag_search',
+      'get_student_learning_tree_context',
+      'derive_payload',
+      'build_study_graph_changes',
+      'submit_learning_tree_changes',
+      'get_student_learning_tree',
+      'get_learning_tree_features',
+    ],
+    error_message: '',
+    error_code: '',
+  };
+}
+
+export async function getStudyGraphRaw(payload = {}) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
+  const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
+
+  if (USE_MOCK_API) {
+    const [detail, features] = await Promise.all([
+      getStudyGraphDetailRaw({ userId, syllabusId, includeDebug: payload.includeDebug ?? payload.include_debug ?? false }),
+      getStudyGraphFeaturesRaw({ userId, syllabusId }),
+    ]);
+
+    return {
+      success: Boolean(detail?.success) && Boolean(features?.success),
+      user_id: userId,
+      syllabus_id: syllabusId,
+      tree_id: detail?.tree_id ?? features?.tree_id ?? null,
+      tree: detail?.tree ?? null,
+      features: features?.features ?? null,
+      debug: detail?.debug ?? {},
+      error_message: detail?.error_message || features?.error_message || '',
+      error_code: detail?.error_code || features?.error_code || '',
+    };
+  }
+
+  const detail = await getStudyGraphDetailRaw({ userId, syllabusId, includeDebug: payload.includeDebug ?? payload.include_debug ?? false });
+  const features = await getStudyGraphFeaturesRaw({ userId, syllabusId });
+
+  const detailLooksUnavailable = !detail?.success && (detail?.error_code === 'invalid_json_response');
+  const featureLooksUnavailable = !features?.success && (features?.error_code === 'invalid_json_response');
+
+  if (detailLooksUnavailable && featureLooksUnavailable) {
+    return apiPost('/api/learning_study_graph', {
+      user_id: userId,
+      syllabus_id: syllabusId,
+      include_debug: payload.includeDebug ?? payload.include_debug ?? false,
+    });
+  }
+
+  return {
+    success: Boolean(detail?.success) && Boolean(features?.success),
+    user_id: userId,
+    syllabus_id: syllabusId,
+    tree_id: detail?.tree_id ?? features?.tree_id ?? null,
+    tree: detail?.tree ?? null,
+    features: features?.features ?? null,
+    debug: detail?.debug ?? {},
+    error_message: detail?.error_message || features?.error_message || '',
+    error_code: detail?.error_code || features?.error_code || '',
   };
 }
 
@@ -621,7 +862,17 @@ export async function getLearningProfile(payload = {}) {
 }
 
 export async function getStudyGraph(payload = {}) {
-  return parseStudyGraphResponse(await getStudyGraphRaw(payload));
+  return parseStudyGraphResponse(await getStudyGraphRaw(payload), {
+    userId: payload.userId ?? payload.user_id ?? getCurrentUserId(),
+    syllabusId: payload.syllabusId ?? payload.syllabus_id ?? null,
+  });
+}
+
+export async function runStudyGraphAgent(payload = {}) {
+  return parseStudyGraphResponse(await runStudyGraphAgentRaw(payload), {
+    userId: payload.userId ?? payload.user_id ?? getCurrentUserId(),
+    syllabusId: payload.syllabusId ?? payload.syllabus_id ?? null,
+  });
 }
 
 export async function askQuestion(payload = {}) {

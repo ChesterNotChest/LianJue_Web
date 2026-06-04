@@ -628,6 +628,22 @@ function formatResourceTime(value) {
   });
 }
 
+function formatMainFileLabel(key) {
+  if (key === 'json_path') {
+    return 'JSON';
+  }
+  if (key === 'md_path') {
+    return 'Markdown';
+  }
+  if (key === 'mermaid_path') {
+    return 'Mermaid';
+  }
+  if (key === 'pptx_path') {
+    return 'PPTX';
+  }
+  return key;
+}
+
 function MindmapNodeList({ nodes = [] }) {
   if (!Array.isArray(nodes) || !nodes.length) {
     return null;
@@ -814,7 +830,7 @@ function GeneratedResourceWorkbench({
               })}
             </div>
           ) : (
-            <EmptyState>当前还没有生成资源。</EmptyState>
+            <EmptyState>当前用户目录下还没有生成资源。</EmptyState>
           )}
         </section>
 
@@ -841,6 +857,36 @@ function GeneratedResourceWorkbench({
                   {detail.validation?.valid === false ? <small>校验未通过</small> : null}
                 </div>
               </div>
+              <div className="generated-resource-manifest-strip">
+                <div>
+                  <span>资源类型</span>
+                  <strong>{getGeneratedResourceTypeMeta(detail.resourceType).label}</strong>
+                </div>
+                <div>
+                  <span>状态</span>
+                  <strong>{detail.status || 'unknown'}</strong>
+                </div>
+                <div>
+                  <span>主文件</span>
+                  <strong>{Object.keys(detail.mainFiles ?? {}).length || 0}</strong>
+                </div>
+              </div>
+              {Object.keys(detail.mainFiles ?? {}).length ? (
+                <div className="generated-resource-file-strip">
+                  {Object.entries(detail.mainFiles).map(([key, value]) => (
+                    <div key={key} className="generated-resource-file-item">
+                      <span>{formatMainFileLabel(key)}</span>
+                      <strong>{String(value).split('/').pop()}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {detail.resourceDir ? (
+                <div className="generated-resource-path-note">
+                  <span>资源目录</span>
+                  <code>{detail.resourceDir}</code>
+                </div>
+              ) : null}
               <GeneratedResourcePreview detail={detail} />
             </>
           ) : (
@@ -1008,17 +1054,22 @@ function createEmptyLearningProfile(userId = null, syllabusId = null) {
 }
 
 function createEmptyStudyGraphBundle(userId = null, syllabusId = null) {
+  const treeId = syllabusId && userId ? `study_tree:${userId}:${syllabusId}` : null;
   return {
     success: true,
     userId,
     syllabusId,
-    treeId: syllabusId && userId ? `study_tree:${userId}:${syllabusId}` : null,
+    treeId,
     tree: {
-      tree_id: syllabusId && userId ? `study_tree:${userId}:${syllabusId}` : null,
+      schema_version: 1,
+      tree_id: treeId,
+      user_id: userId,
+      syllabus_id: syllabusId,
       subject_title: '',
       title: '',
       virtual_root: {
-        node_id: syllabusId && userId ? `study_tree_root:${userId}:${syllabusId}` : 'study_tree_root',
+        type: 'tree_root',
+        node_id: treeId ? `${treeId}:virtual_root` : 'study_tree_virtual_root',
         title: '',
       },
       nodes: [],
@@ -1039,6 +1090,8 @@ function createEmptyStudyGraphBundle(userId = null, syllabusId = null) {
       tree_growth: 0,
       updated_at: 0,
     },
+    changes: [],
+    toolTrace: [],
     debug: {},
     errorMessage: '',
     errorCode: '',
@@ -1940,6 +1993,11 @@ export default function StudentDashboard({ navigate }) {
                                       syllabusId: active.syllabusId,
                                       question: questionInput,
                                     });
+
+                                    if (!response?.success) {
+                                      throw new Error(response?.errorMessage || '提问失败');
+                                    }
+
                                     const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
                                     setQuestionAsked(true);
                                     setAnswer(response.answer);

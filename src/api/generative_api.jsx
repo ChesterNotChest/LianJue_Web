@@ -370,13 +370,9 @@ export function getGeneratedResourceTypeMeta(type) {
     return { label: '复习课件', tone: 'neutral' };
   }
   if (normalized === 'coding_practice') {
-    return { label: '实操案例', tone: 'success' };
+    return { label: '代码实操', tone: 'success' };
   }
   return { label: normalized || '资源', tone: 'neutral' };
-}
-
-export function getDefaultGenerationQuestion(title = '') {
-  return title ? `请围绕 ${title} 生成一组适合当前学生复习的资源，突出核心概念、薄弱点和自测内容。` : '请生成一组适合当前学习主题的复习资源。';
 }
 
 export function getCurrentUserIdSafe() {

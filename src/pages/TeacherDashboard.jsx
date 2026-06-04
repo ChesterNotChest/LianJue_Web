@@ -1,6 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
-import TeacherGraphExplorer from '../components/TeacherGraphExplorer';
 import {
   Button,
   DisabledBlock,
@@ -16,8 +15,6 @@ import {
 import {
   buildSyllabus,
   buildSyllabusDraft,
-  createGraph,
-  getTeacherGraphSnapshot,
   generateFinalMaterial,
   generateMaterialDraft,
   getTeacherDashboardBootstrapData,
@@ -28,7 +25,6 @@ import {
   getMaterialStatusRaw,
   getSyllabusDetailRaw,
   getSyllabusDraftDetailRaw,
-  listGraphs,
   parseMaterialDetailResponse,
   parseMaterialDraftResponse,
   parseMaterialStatusResponse,
@@ -145,7 +141,7 @@ function normalizeFinalPeriod(period = [], draftPeriod = []) {
 function buildDraftJson(state) {
   return {
     title: state.draftTitle,
-    graph_name: state.selectedGraphName || state.syllabus.graphName || '',
+    graph_name: state.syllabus.graphName || '',
     period: cloneData(state.draftPeriod),
   };
 }
@@ -154,7 +150,7 @@ function buildFinalJson(state) {
   return {
     title: state.finalTitle,
     day_one: state.finalDayOne,
-    graph_name: state.selectedGraphName || state.syllabus.graphName || '',
+    graph_name: state.syllabus.graphName || '',
     period: cloneData(state.finalPeriod),
   };
 }
@@ -193,7 +189,7 @@ function hydrateFinalQuestion(question) {
   return next;
 }
 
-function createBuildState(active, graphOptions = []) {
+function createBuildState(active) {
   const draftPeriod = active.draft?.period?.length ? cloneData(active.draft.period) : createEmptyDraftPeriod();
 
   return {
@@ -210,9 +206,6 @@ function createBuildState(active, graphOptions = []) {
     finalDayOne: active.finalData?.day_one ?? '',
     finalPeriod: normalizeFinalPeriod(active.finalData?.period ?? [], draftPeriod),
     expandedFinalWeekId: '',
-    selectedGraphName: active.graphName ?? graphOptions.find((item) => item.graphId === active.graphId)?.graphName ?? '',
-    newGraphName: '',
-    selectedGraphId: active.graphId ?? '',
     calendarFiles: [],
     isDraftJsonLoaded: Boolean(active.draft),
     isFinalJsonLoaded: Boolean(active.finalData),
@@ -481,9 +474,7 @@ function BuildSyllabusModal({
   setState,
   draftCurrentWeek,
   finalCurrentWeek,
-  graphOptions,
   onClose,
-  onCreateGraph,
   onUpload,
   onGenerateDraft,
   onSaveDraft,
@@ -509,83 +500,28 @@ function BuildSyllabusModal({
 
       {state.step === 0 ? (
         <section className="modal-section">
-          <div className="build-step-grid">
-            <div className="study-mode graph-picker-panel">
-              <div className="subsection-head">
-                <strong className="study-mode-title">图谱选择</strong>
-                <StatusPill tone={state.selectedGraphId ? 'success' : 'warning'}>
-                  {state.selectedGraphId ? '已选图谱' : '待选择'}
-                </StatusPill>
-              </div>
-              <div className="graph-create-row">
-                <Button
-                  variant="secondary"
-                  onClick={onCreateGraph}
-                  disabled={Boolean(state.busy) || !state.newGraphName.trim()}
-                >
-                  {state.busy === 'graph' ? '处理中...' : '创建新图谱'}
-                </Button>
-                <input
-                  className="select-field"
-                  value={state.newGraphName}
-                  placeholder="输入图谱名称"
-                  onChange={(event) => setState((current) => ({ ...current, newGraphName: event.target.value }))}
-                />
-              </div>
-              <label className="field">
-                <span>graph_id</span>
-                <select
-                  className="select-field"
-                  value={state.selectedGraphId}
-                  onChange={(event) => {
-                    const nextId = Number(event.target.value) || '';
-                    const nextGraph = graphOptions.find((graph) => graph.graphId === nextId);
-                    setState((current) => ({
-                      ...current,
-                      selectedGraphId: nextId,
-                      selectedGraphName: nextGraph?.graphName ?? '',
-                    }));
-                  }}
-                >
-                  <option value="">请选择图谱</option>
-                  {graphOptions.map((graph) => (
-                    <option key={graph.graphId} value={graph.graphId}>
-                      {graph.graphName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>graph_name</span>
-                <input value={state.selectedGraphName} readOnly placeholder="当前所选图谱名称" />
-              </label>
+          <div className="study-mode">
+            <div className="subsection-head">
+              <strong className="study-mode-title">上传教学日历</strong>
+              <StatusPill tone={!syllabus.status.isEduCalendarMissing ? 'success' : 'warning'}>
+                {!syllabus.status.isEduCalendarMissing ? '已存在' : '待上传'}
+              </StatusPill>
             </div>
-
-            <DisabledBlock disabled={!state.selectedGraphId} message="请先在左侧选择一个图谱">
-              <div className="study-mode">
-                <div className="subsection-head">
-                  <strong className="study-mode-title">上传教学日历</strong>
-                  <StatusPill tone={!syllabus.status.isEduCalendarMissing ? 'success' : 'warning'}>
-                    {!syllabus.status.isEduCalendarMissing ? '已存在' : '待上传'}
-                  </StatusPill>
-                </div>
-                <FileDropzone
-                  files={state.calendarFiles}
-                  onFilesChange={(files) => setState((current) => ({ ...current, calendarFiles: files }))}
-                  title="选择教学日历 / dropbox"
-                />
-                <div className="tile-actions">
-                  <Button
-                    variant="primary"
-                    onClick={onUpload}
-                    disabled={Boolean(state.busy) || !state.selectedGraphId || !state.calendarFiles.length}
-                  >
-                    {state.busy === 'upload' ? '处理中...' : '上传'}
-                  </Button>
-                  <Button variant="ghost" onClick={onClose}>取消</Button>
-                </div>
-              </div>
-            </DisabledBlock>
+            <FileDropzone
+              files={state.calendarFiles}
+              onFilesChange={(files) => setState((current) => ({ ...current, calendarFiles: files }))}
+              title="选择教学日历 / dropbox"
+            />
+            <div className="tile-actions">
+              <Button
+                variant="primary"
+                onClick={onUpload}
+                disabled={Boolean(state.busy) || !state.calendarFiles.length}
+              >
+                {state.busy === 'upload' ? '处理中...' : '上传'}
+              </Button>
+              <Button variant="ghost" onClick={onClose}>取消</Button>
+            </div>
           </div>
         </section>
       ) : null}
@@ -1083,7 +1019,6 @@ function MaterialModal({
 
 export default function TeacherDashboard({ navigate }) {
   const [syllabuses, setSyllabuses] = useState([]);
-  const [graphOptions, setGraphOptions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [isBooting, setIsBooting] = useState(true);
   const [error, setError] = useState('');
@@ -1091,18 +1026,6 @@ export default function TeacherDashboard({ navigate }) {
   const [materialModal, setMaterialModal] = useState({ open: false });
   const [materialUploadFiles, setMaterialUploadFiles] = useState([]);
   const [materialUploadBusy, setMaterialUploadBusy] = useState(false);
-  const [teacherGraphLoading, setTeacherGraphLoading] = useState(false);
-  const [teacherGraphError, setTeacherGraphError] = useState('');
-  const [teacherGraphQuery, setTeacherGraphQuery] = useState('');
-  const [teacherGraphData, setTeacherGraphData] = useState({
-    graphId: null,
-    graphName: '',
-    query: '',
-    snapshot: { nodes: [], edges: [] },
-    paragraphs: [],
-    resultCount: 0,
-  });
-  const [isTeacherGraphOpen, setIsTeacherGraphOpen] = useState(false);
   const latestSyllabusesRef = useRef([]);
   const latestActiveIdRef = useRef(null);
   const latestBuildModalRef = useRef({ open: false });
@@ -1140,7 +1063,7 @@ export default function TeacherDashboard({ navigate }) {
       setError('');
 
       try {
-        const [bootstrap, graphs] = await Promise.all([getTeacherDashboardBootstrapData(), listGraphs()]);
+        const bootstrap = await getTeacherDashboardBootstrapData();
         const firstSyllabusId = bootstrap.syllabuses[0]?.syllabusId ?? null;
         const firstSyllabus = bootstrap.syllabuses[0] ?? null;
         const firstSoftData = firstSyllabus ? await getTeacherSyllabusSoftRefreshData(firstSyllabus) : null;
@@ -1156,7 +1079,6 @@ export default function TeacherDashboard({ navigate }) {
                 : item
             )),
           );
-          setGraphOptions(graphs);
           setActiveId(firstSyllabusId);
         }
       } catch (loadError) {
@@ -1254,7 +1176,7 @@ export default function TeacherDashboard({ navigate }) {
       softRefreshBusyRef.current = true;
 
       try {
-        const [bootstrap, graphs] = await Promise.all([getTeacherDashboardBootstrapData(), listGraphs()]);
+        const bootstrap = await getTeacherDashboardBootstrapData();
         if (cancelled) {
           return;
         }
@@ -1277,7 +1199,6 @@ export default function TeacherDashboard({ navigate }) {
           return;
         }
 
-        setGraphOptions(graphs);
         setSyllabuses((current) => {
           const currentById = new Map(current.map((item) => [item.syllabusId, item]));
 
@@ -1381,75 +1302,9 @@ export default function TeacherDashboard({ navigate }) {
     );
   };
 
-  const loadTeacherGraph = useCallback(async (syllabus, options = {}) => {
-    if (!syllabus?.graphId) {
-      setTeacherGraphData({
-        graphId: null,
-        graphName: '',
-        query: '',
-        snapshot: { nodes: [], edges: [] },
-        paragraphs: [],
-        resultCount: 0,
-      });
-      setTeacherGraphError('');
-      return;
-    }
-
-    const nextQuery = String(options.query ?? syllabus.title ?? syllabus.graphName ?? '').trim();
-    setTeacherGraphLoading(true);
-    setTeacherGraphError('');
-
-    try {
-      const response = await getTeacherGraphSnapshot({
-        graphId: syllabus.graphId,
-        graphName: syllabus.graphName,
-        query: nextQuery,
-      });
-
-      if (!response.success) {
-        throw new Error(response.errorMessage || '图谱加载失败');
-      }
-
-      setTeacherGraphData(response);
-      setTeacherGraphQuery(response.query || nextQuery);
-    } catch (actionError) {
-      setTeacherGraphError(actionError instanceof Error ? actionError.message : '图谱加载失败');
-      setTeacherGraphData({
-        graphId: syllabus.graphId,
-        graphName: syllabus.graphName ?? '',
-        query: nextQuery,
-        snapshot: { nodes: [], edges: [] },
-        paragraphs: [],
-        resultCount: 0,
-      });
-    } finally {
-      setTeacherGraphLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     setExpandedTeacherWeekId(null);
   }, [activeId]);
-
-  useEffect(() => {
-    if (!active) {
-      setTeacherGraphQuery('');
-      setTeacherGraphError('');
-      setTeacherGraphData({
-        graphId: null,
-        graphName: '',
-        query: '',
-        snapshot: { nodes: [], edges: [] },
-        paragraphs: [],
-        resultCount: 0,
-      });
-      return;
-    }
-
-    const defaultQuery = String(active.title || active.graphName || '').trim();
-    setTeacherGraphQuery(defaultQuery);
-    void loadTeacherGraph(active, { query: defaultQuery });
-  }, [active, loadTeacherGraph]);
 
   const changeBuildStep = async (nextStep) => {
     if (!buildTarget) {
@@ -1591,19 +1446,7 @@ export default function TeacherDashboard({ navigate }) {
 
   const createNewSyllabus = () => {
     setMaterialUploadFiles([]);
-    setBuildModal(createBuildState(createEmptySyllabus(), graphOptions));
-  };
-
-  const softRefreshGraphs = async (nextSelectedGraphId = '') => {
-    const graphs = await listGraphs();
-    setGraphOptions(graphs);
-    const nextGraph = graphs.find((item) => item.graphId === (nextSelectedGraphId || buildModal.selectedGraphId));
-    setBuildModal((current) => ({
-      ...current,
-      selectedGraphId: nextSelectedGraphId || current.selectedGraphId,
-      selectedGraphName: nextGraph?.graphName ?? current.selectedGraphName,
-      busy: '',
-    }));
+    setBuildModal(createBuildState(createEmptySyllabus()));
   };
 
   return (
@@ -1660,73 +1503,6 @@ export default function TeacherDashboard({ navigate }) {
                 )}
               </article>
 
-              <article className="tile-card tile-slate tile-span-full teacher-graph-tile">
-                <div className="tile-card-head">
-                  <div>
-                    <h3>教学图谱</h3>
-                    <p className="teacher-graph-subcopy">
-                      参考 `llm-wiki-skill` 的力导向图方式，展示当前图谱下与教学主题相关的实体关系子图。
-                    </p>
-                  </div>
-                  <div className="tile-head-controls">
-                    <StatusPill tone={active?.graphId ? 'success' : 'warning'}>
-                      {active?.graphName || '未绑定图谱'}
-                    </StatusPill>
-                    <Button
-                      variant="ghost"
-                      className="button-compact"
-                      disabled={!active?.graphId}
-                      onClick={() => setIsTeacherGraphOpen(true)}
-                    >
-                      全屏
-                    </Button>
-                  </div>
-                </div>
-                {isTeacherVisibleLoading ? (
-                  <LoadingPlaceholder size="panel" />
-                ) : (
-                  <DisabledBlock disabled={!active?.graphId} message="请先为当前教学大纲绑定图谱">
-                    <div className="teacher-graph-toolbar">
-                      <input
-                        className="teacher-graph-query"
-                        value={teacherGraphQuery}
-                        placeholder="输入教学主题或知识点，例如 机器学习 / HDFS / Hadoop"
-                        onChange={(event) => setTeacherGraphQuery(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault();
-                            void loadTeacherGraph(active, { query: teacherGraphQuery });
-                          }
-                        }}
-                      />
-                      <Button
-                        variant="primary"
-                        className="button-compact"
-                        disabled={teacherGraphLoading || !active?.graphId}
-                        onClick={() => {
-                          void loadTeacherGraph(active, { query: teacherGraphQuery });
-                        }}
-                      >
-                        {teacherGraphLoading ? '刷新中...' : '刷新'}
-                      </Button>
-                    </div>
-                    {teacherGraphError ? (
-                      <EmptyState>{teacherGraphError}</EmptyState>
-                    ) : teacherGraphLoading && !(teacherGraphData?.snapshot?.nodes?.length) ? (
-                      <LoadingPlaceholder size="panel" />
-                    ) : (
-                      <TeacherGraphExplorer
-                        snapshot={teacherGraphData.snapshot}
-                        graphName={teacherGraphData.graphName || active?.graphName}
-                        query={teacherGraphData.query || teacherGraphQuery}
-                        paragraphs={teacherGraphData.paragraphs}
-                        height={620}
-                      />
-                    )}
-                  </DisabledBlock>
-                )}
-              </article>
-
               <div className="teacher-side-stack">
                 <article className="tile-card tile-amber tile-third">
                   <div className="tile-card-head">
@@ -1741,7 +1517,7 @@ export default function TeacherDashboard({ navigate }) {
                         <Button
                           variant="primary"
                           onClick={() => {
-                            setBuildModal(createBuildState(active, graphOptions));
+                            setBuildModal(createBuildState(active));
                           }}
                         >
                           {active.status.isFinalMissing ? '创建教学大纲' : '编辑教学大纲'}
@@ -1871,62 +1647,6 @@ export default function TeacherDashboard({ navigate }) {
         </section>
       </MainLayout>
 
-      {isTeacherGraphOpen ? (
-        <div className="teacher-graph-overlay" role="dialog" aria-modal="true" aria-label="教学图谱">
-          <div className="teacher-graph-overlay-header">
-            <div className="teacher-graph-overlay-copy">
-              <h2>教学图谱</h2>
-              <p>{teacherGraphData.graphName || active?.graphName || '当前图谱'}</p>
-            </div>
-            <div className="teacher-graph-overlay-controls">
-              <input
-                className="teacher-graph-query"
-                value={teacherGraphQuery}
-                placeholder="输入教学主题或知识点"
-                onChange={(event) => setTeacherGraphQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    void loadTeacherGraph(active, { query: teacherGraphQuery });
-                  }
-                }}
-              />
-              <Button
-                variant="primary"
-                className="button-compact"
-                disabled={teacherGraphLoading || !active?.graphId}
-                onClick={() => {
-                  void loadTeacherGraph(active, { query: teacherGraphQuery });
-                }}
-              >
-                {teacherGraphLoading ? '刷新中...' : '刷新'}
-              </Button>
-              <Button
-                variant="ghost"
-                className="button-compact"
-                onClick={() => setIsTeacherGraphOpen(false)}
-              >
-                关闭
-              </Button>
-            </div>
-          </div>
-          <div className="teacher-graph-overlay-body">
-            {teacherGraphError ? (
-              <EmptyState>{teacherGraphError}</EmptyState>
-            ) : (
-              <TeacherGraphExplorer
-                snapshot={teacherGraphData.snapshot}
-                graphName={teacherGraphData.graphName || active?.graphName}
-                query={teacherGraphData.query || teacherGraphQuery}
-                paragraphs={teacherGraphData.paragraphs}
-                className="is-overlay"
-                height={760}
-              />
-            )}
-          </div>
-        </div>
-      ) : null}
-
       {buildModal.open && buildTarget ? (
         <BuildSyllabusModal
           syllabus={buildTarget}
@@ -1934,47 +1654,21 @@ export default function TeacherDashboard({ navigate }) {
           setState={setBuildModal}
           draftCurrentWeek={buildDraftCurrentWeek}
           finalCurrentWeek={buildFinalCurrentWeek}
-          graphOptions={graphOptions}
           onClose={() => setBuildModal({ open: false })}
-          onCreateGraph={async () => {
-            setBuildModal((current) => ({ ...current, busy: 'graph' }));
-            setError('');
-            try {
-              const response = await createGraph({ graphName: buildModal.newGraphName });
-              if (!response.success || !response.graphId) {
-                throw new Error(response.errorMessage || '创建图谱失败');
-              }
-              await softRefreshGraphs(response.graphId);
-              setBuildModal((current) => ({
-                ...current,
-                newGraphName: '',
-                selectedGraphId: response.graphId,
-                selectedGraphName: response.graphName,
-                busy: '',
-              }));
-            } catch (actionError) {
-              setBuildModal((current) => ({ ...current, busy: '' }));
-              setError(actionError instanceof Error ? actionError.message : '创建图谱失败');
-            }
-          }}
           onUpload={async () => {
             setBuildModal((current) => ({ ...current, busy: 'upload' }));
             setError('');
             try {
               const response = await uploadCalendar({
-                graphId: buildModal.selectedGraphId,
                 file: buildModal.calendarFiles[0],
                 userId: getCurrentUserId(),
               });
               if (!response.success || !response.syllabusId) {
                 throw new Error(response.errorMessage || '上传失败');
               }
-              const selectedGraph = graphOptions.find((item) => item.graphId === buildModal.selectedGraphId);
               const nextSyllabus = {
                 ...cloneData(buildTarget),
                 syllabusId: response.syllabusId,
-                graphId: buildModal.selectedGraphId || buildTarget.graphId,
-                graphName: selectedGraph?.graphName ?? buildTarget.graphName,
                 status: {
                   ...buildTarget.status,
                   isEduCalendarMissing: false,
@@ -2003,7 +1697,6 @@ export default function TeacherDashboard({ navigate }) {
                 syllabus: nextSyllabus,
                 busy: '',
                 step: 1,
-                selectedGraphName: selectedGraph?.graphName ?? current.selectedGraphName,
                 calendarFiles: [],
               }));
             } catch (actionError) {
@@ -2017,12 +1710,9 @@ export default function TeacherDashboard({ navigate }) {
             try {
               await buildSyllabusDraft({
                 syllabusId: buildTarget.syllabusId,
-                graphId: buildModal.selectedGraphId || buildTarget.graphId,
               });
               const refreshedBuildData = await getTeacherSyllabusBuildData({
                 ...cloneData(buildTarget),
-                graphId: buildModal.selectedGraphId || buildTarget.graphId,
-                graphName: buildModal.selectedGraphName || buildTarget.graphName,
                 status: {
                   ...buildTarget.status,
                   isDraftMissing: false,
@@ -2032,8 +1722,6 @@ export default function TeacherDashboard({ navigate }) {
 
               patchSyllabusById(buildTarget.syllabusId, (item) => mergeSyllabusData(item, {
                 ...refreshedBuildData,
-                graphId: buildModal.selectedGraphId || item.graphId,
-                graphName: buildModal.selectedGraphName || refreshedBuildData.graphName || item.graphName,
                 draft: refreshedDraft,
               }));
               setBuildModal((current) => {
@@ -2045,8 +1733,6 @@ export default function TeacherDashboard({ navigate }) {
                   ...current,
                   syllabus: mergeSyllabusData(current.syllabus, {
                     ...refreshedBuildData,
-                    graphId: current.selectedGraphId || current.syllabus.graphId,
-                    graphName: current.selectedGraphName || refreshedBuildData.graphName || current.syllabus.graphName,
                     draft: refreshedDraft,
                   }),
                   draftTitle: refreshedDraft?.title ?? current.draftTitle,
@@ -2094,20 +1780,16 @@ export default function TeacherDashboard({ navigate }) {
             setBuildModal((current) => ({ ...current, busy: 'final' }));
             setError('');
             try {
-              const selectedGraph = graphOptions.find(
-                (item) => item.graphId === (buildModal.selectedGraphId || buildTarget.graphId),
-              );
               await buildSyllabus({
                 syllabusId: buildTarget.syllabusId,
               });
               patchSyllabusById(buildTarget.syllabusId, (item) => {
                 const nextFinalPeriod = createFinalPeriodFromDraft(buildModal.draftPeriod);
                 item.status.isFinalMissing = false;
-                item.graphName = selectedGraph?.graphName ?? item.graphName;
                 item.finalData = {
                   title: buildModal.draftTitle,
                   day_one: buildModal.draftDayOne,
-                  graph_name: selectedGraph?.graphName ?? item.graphName ?? '',
+                  graph_name: item.graphName ?? '',
                   period: nextFinalPeriod,
                 };
                 return item;
@@ -2119,15 +1801,14 @@ export default function TeacherDashboard({ navigate }) {
                   ...current,
                   syllabus: {
                     ...current.syllabus,
-                    graphName: selectedGraph?.graphName ?? current.syllabus.graphName,
                     status: {
                       ...current.syllabus.status,
                       isFinalMissing: false,
                     },
-                  finalData: {
+                    finalData: {
                       title: current.draftTitle,
                       day_one: current.draftDayOne,
-                      graph_name: selectedGraph?.graphName ?? current.syllabus.graphName ?? '',
+                      graph_name: current.syllabus.graphName ?? '',
                       period: nextFinalPeriod,
                     },
                   },
