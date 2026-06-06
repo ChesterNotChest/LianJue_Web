@@ -562,7 +562,7 @@ a {
 }
 
 .teacher-dashboard-shell {
-  width: min(100%, 1120px);
+  width: min(100%, 1024px);
   margin: 0 auto;
   gap: 26px;
 }
@@ -677,8 +677,8 @@ a {
 
 .teacher-page-body {
   display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
@@ -860,6 +860,13 @@ a {
   background: linear-gradient(145deg, #f1d7a0 0%, #fbf1dd 100%);
 }
 
+.teacher-identity-card {
+  position: static;
+  top: auto;
+  margin-left: 0;
+  padding-left: 0;
+}
+
 .teacher-sidebar-actions,
 .teacher-sidebar-status {
   display: grid;
@@ -889,11 +896,19 @@ a {
 
 .teacher-mainstream .teacher-surface {
   max-width: none;
+  min-width: 0;
 }
 
 .teacher-surface-overview .week-axis-card {
   background: rgba(255, 255, 255, 0.56);
   border-color: rgba(72, 54, 36, 0.04);
+}
+
+.teacher-scroll-window {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .teacher-material-groups,
@@ -903,6 +918,7 @@ a {
 }
 
 .teacher-upload-band {
+  width: 100%;
   background: rgba(255, 251, 245, 0.58);
   border-color: rgba(72, 54, 36, 0.08);
 }
@@ -910,13 +926,20 @@ a {
 .teacher-subsection {
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.teacher-subsection-graph {
+  max-width: none;
 }
 
 .teacher-subsection-head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 
 .teacher-subsection-head strong {
@@ -926,6 +949,29 @@ a {
 .teacher-subsection-head span {
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.teacher-dashboard-switcher {
+  margin-top: 30px;
+  padding-top: 6px;
+}
+
+.teacher-dashboard-switcher .switcher-bar {
+  gap: 18px;
+}
+
+.teacher-dashboard-switcher .switcher-meta {
+  margin-top: 4px;
+}
+
+.teacher-dashboard-shell,
+.teacher-page-body,
+.teacher-mainstream,
+.teacher-surface,
+.teacher-material-groups,
+.teacher-material-library {
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .student-muted-copy {

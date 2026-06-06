@@ -111,7 +111,7 @@ function ModalShell({ title, children, onClose, className = '' }) {
   );
 }
 
-function SyllabusSwitcher({ items, activeId, onChange, onPrev, onNext, disabled = false, learningLabel }) {
+function SyllabusSwitcher({ items, activeId, onChange, onPrev, onNext, disabled = false, learningLabel, showMeta = true }) {
   const current = items.find((item) => (item.syllabusId ?? item.syllabus_id) === activeId) ?? items[0];
 
   return (
@@ -133,19 +133,21 @@ function SyllabusSwitcher({ items, activeId, onChange, onPrev, onNext, disabled 
         </div>
         <Button variant="ghost" disabled={disabled || items.length <= 1} onClick={onNext}>下一份</Button>
       </div>
-      <div className="switcher-meta">
-        {current?.permission ? (
-          <StatusPill tone={current.permission === 'owner' ? 'success' : 'neutral'}>
-            {current.permission}
-          </StatusPill>
-        ) : null}
-        {typeof current?.isLearning === 'boolean' && learningLabel !== false ? (
-          <StatusPill tone={current.isLearning ? 'success' : 'warning'}>
-            {learningLabel ?? (current.isLearning ? '学习中' : '未学习')}
-          </StatusPill>
-        ) : null}
-        {current?.graphName ? <StatusPill tone="neutral">{current.graphName}</StatusPill> : null}
-      </div>
+      {showMeta ? (
+        <div className="switcher-meta">
+          {current?.permission ? (
+            <StatusPill tone={current.permission === 'owner' ? 'success' : 'neutral'}>
+              {current.permission}
+            </StatusPill>
+          ) : null}
+          {typeof current?.isLearning === 'boolean' && learningLabel !== false ? (
+            <StatusPill tone={current.isLearning ? 'success' : 'warning'}>
+              {learningLabel ?? (current.isLearning ? '学习中' : '未学习')}
+            </StatusPill>
+          ) : null}
+          {current?.graphName ? <StatusPill tone="neutral">{current.graphName}</StatusPill> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

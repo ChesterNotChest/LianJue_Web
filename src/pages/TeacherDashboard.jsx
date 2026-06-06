@@ -195,9 +195,7 @@ function createBuildState(active) {
   return {
     open: true,
     syllabus: cloneData(active),
-    step: active.status.isFinalMissing
-      ? (active.status.isDraftMissing ? (active.status.isEduCalendarMissing ? 0 : 1) : 2)
-      : 4,
+    step: 0,
     busy: '',
     draftPeriod,
     draftTitle: active.title,
@@ -1456,7 +1454,6 @@ export default function TeacherDashboard({ navigate }) {
         actions={(
           <div className="header-actions">
             <Button variant="secondary" onClick={() => navigate('/login')}>返回登录</Button>
-            <Button variant="primary" onClick={createNewSyllabus}>创建新的教学大纲</Button>
           </div>
         )}
       >
@@ -1497,18 +1494,10 @@ export default function TeacherDashboard({ navigate }) {
                 onPrev={() => switchSyllabus(-1)}
                 onNext={() => switchSyllabus(1)}
                 disabled={isBooting || !syllabuses.length}
+                showMeta={false}
               />
             </div>
 
-            {active ? (
-              <div className="teacher-dashboard-badges">
-                {active.permission ? <StatusPill tone={active.permission === 'owner' ? 'success' : 'neutral'}>{active.permission}</StatusPill> : null}
-                {active.graphName ? <StatusPill tone="neutral">{active.graphName}</StatusPill> : null}
-                <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
-                  {weakKnowledge ? '知识来源过少' : '知识来源充足'}
-                </StatusPill>
-              </div>
-            ) : null}
           </section>
 
           {error ? <EmptyState>{error}</EmptyState> : null}
@@ -1528,20 +1517,20 @@ export default function TeacherDashboard({ navigate }) {
 
                 <div className="student-identity-facts teacher-identity-facts">
                   <div className="student-identity-fact-card">
-                    <span>课程权限</span>
-                    <strong>{active?.permission ?? '未知'}</strong>
-                  </div>
-                  <div className="student-identity-fact-card">
-                    <span>知识图谱</span>
-                    <strong>{active?.graphName ?? '未绑定'}</strong>
-                  </div>
-                  <div className="student-identity-fact-card">
                     <span>教学日历</span>
                     <strong>{active?.status?.isEduCalendarMissing ? '待上传' : '已上传'}</strong>
                   </div>
                   <div className="student-identity-fact-card">
                     <span>材料解析</span>
                     <strong>{`${active?.graphFileCount ?? 0} 份`}</strong>
+                  </div>
+                  <div className="student-identity-fact-card">
+                    <span>大纲状态</span>
+                    <strong>{syllabusProgress.label}</strong>
+                  </div>
+                  <div className="student-identity-fact-card">
+                    <span>习题草稿</span>
+                    <strong>{`${active?.materialDrafts?.length ?? 0} 份`}</strong>
                   </div>
                 </div>
 
@@ -1550,7 +1539,6 @@ export default function TeacherDashboard({ navigate }) {
                     <div className="student-surface-head-copy">
                       <p className="student-section-kicker">Actions</p>
                       <h3>教师操作</h3>
-                      <p className="student-section-subcopy">从这里进入教学大纲编辑与习题构建，不改动当前页面主视图。</p>
                     </div>
                   </div>
                   <div className="tile-actions">
@@ -1564,7 +1552,13 @@ export default function TeacherDashboard({ navigate }) {
                         setBuildModal(createBuildState(active));
                       }}
                     >
-                      {active?.status?.isFinalMissing ? '创建教学大纲' : '编辑教学大纲'}
+                      {active?.status?.isFinalMissing ? '继续构建教学大纲' : '编辑当前教学大纲'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={createNewSyllabus}
+                    >
+                      创建新的教学大纲
                     </Button>
                     <Button
                       variant="secondary"
@@ -1581,27 +1575,6 @@ export default function TeacherDashboard({ navigate }) {
                   </div>
                 </section>
 
-                <section className="teacher-sidebar-status">
-                  <p className="student-section-kicker">Status</p>
-                  <div className="teacher-status-list">
-                    <div className="teacher-status-row">
-                      <span>教学大纲</span>
-                      <StatusPill tone={syllabusProgress.tone}>{syllabusProgress.label}</StatusPill>
-                    </div>
-                    <div className="teacher-status-row">
-                      <span>知识材料质量</span>
-                      <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
-                        {weakKnowledge ? '偏少' : '可用'}
-                      </StatusPill>
-                    </div>
-                    <div className="teacher-status-row">
-                      <span>习题构建</span>
-                      <StatusPill tone={materialDisabled || weakKnowledge ? 'warning' : 'success'}>
-                        {materialDisabled || weakKnowledge ? '等待条件' : '可编辑'}
-                      </StatusPill>
-                    </div>
-                  </div>
-                </section>
               </aside>
 
               <div className="teacher-mainstream">
@@ -1612,11 +1585,6 @@ export default function TeacherDashboard({ navigate }) {
                       <h3>教学大纲总览</h3>
                       <p className="student-section-subcopy">按课程周次查看当前终稿大纲，直接把一门课的节奏铺开检查。</p>
                     </div>
-                    <div className="tile-head-controls">
-                      <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
-                        {weakKnowledge ? '知识来源过少' : '可交互'}
-                      </StatusPill>
-                    </div>
                   </div>
                   {isTeacherVisibleLoading ? (
                     <LoadingPlaceholder size="axis" />
@@ -1625,14 +1593,16 @@ export default function TeacherDashboard({ navigate }) {
                       disabled={overviewDisabled}
                       message={weakKnowledge ? '知识来源过少' : '等待数据加载或教学日历上传'}
                     >
-                      <WeekAxis
-                        items={active.finalData?.period ?? []}
-                        currentWeek={activeCurrentWeek}
-                        expandedItemId={expandedTeacherWeekId}
-                        onToggleExpand={(itemId) => {
-                          setExpandedTeacherWeekId((current) => (current === itemId ? null : itemId));
-                        }}
-                      />
+                      <div className="teacher-scroll-window">
+                        <WeekAxis
+                          items={active.finalData?.period ?? []}
+                          currentWeek={activeCurrentWeek}
+                          expandedItemId={expandedTeacherWeekId}
+                          onToggleExpand={(itemId) => {
+                            setExpandedTeacherWeekId((current) => (current === itemId ? null : itemId));
+                          }}
+                        />
+                      </div>
                     </DisabledBlock>
                   )}
                 </section>
@@ -1644,21 +1614,6 @@ export default function TeacherDashboard({ navigate }) {
                       <h3>教学习题构建</h3>
                       <p className="student-section-subcopy">查看已有习题草稿和终稿状态，并通过弹窗继续完成生成、修订和发布。</p>
                     </div>
-                    <div className="tile-head-controls">
-                      <Button
-                        variant="primary"
-                        className="button-compact"
-                        disabled={!active || isTeacherVisibleLoading || materialDisabled || weakKnowledge}
-                        onClick={() => {
-                          if (!active) {
-                            return;
-                          }
-                          setMaterialModal(createMaterialState(active));
-                        }}
-                      >
-                        打开构建器
-                      </Button>
-                    </div>
                   </div>
                   {isTeacherVisibleLoading ? (
                     <LoadingPlaceholder size="shelf" />
@@ -1667,20 +1622,22 @@ export default function TeacherDashboard({ navigate }) {
                       disabled={materialDisabled || weakKnowledge}
                       message={weakKnowledge ? '知识来源过少' : '等待数据加载'}
                     >
-                      <MaterialShelf
-                        items={materialDraftShelfItems.map((item) => ({
-                          ...item,
-                          onDownload: async (downloadItem) => {
-                            try {
-                              await handleDownloadFile(downloadItem);
-                            } catch (actionError) {
-                              setError(actionError instanceof Error ? actionError.message : '下载失败');
-                            }
-                          },
-                        }))}
-                        rows={2}
-                        emptyText="暂无习题文件。"
-                      />
+                      <div className="teacher-scroll-window">
+                        <MaterialShelf
+                          items={materialDraftShelfItems.map((item) => ({
+                            ...item,
+                            onDownload: async (downloadItem) => {
+                              try {
+                                await handleDownloadFile(downloadItem);
+                              } catch (actionError) {
+                                setError(actionError instanceof Error ? actionError.message : '下载失败');
+                              }
+                            },
+                          }))}
+                          rows={2}
+                          emptyText="暂无习题文件。"
+                        />
+                      </div>
                     </DisabledBlock>
                   )}
                 </section>
@@ -1761,25 +1718,27 @@ export default function TeacherDashboard({ navigate }) {
                       </div>
 
                       <div className="teacher-material-library">
-                        <div className="teacher-subsection">
+                        <div className="teacher-subsection teacher-subsection-graph">
                           <div className="teacher-subsection-head">
                             <strong>知识图谱材料</strong>
                             <span>{`${active?.graphFiles?.length ?? 0} 份`}</span>
                           </div>
-                          <MaterialShelf
-                            items={(active?.graphFiles ?? []).map((item) => ({
-                              ...item,
-                              onDownload: async (downloadItem) => {
-                                try {
-                                  await handleDownloadFile(downloadItem);
-                                } catch (actionError) {
-                                  setError(actionError instanceof Error ? actionError.message : '下载失败');
-                                }
-                              },
-                            }))}
-                            rows={2}
-                            emptyText="暂无知识图谱材料。"
-                          />
+                          <div className="teacher-scroll-window">
+                            <MaterialShelf
+                              items={(active?.graphFiles ?? []).map((item) => ({
+                                ...item,
+                                onDownload: async (downloadItem) => {
+                                  try {
+                                    await handleDownloadFile(downloadItem);
+                                  } catch (actionError) {
+                                    setError(actionError instanceof Error ? actionError.message : '下载失败');
+                                  }
+                                },
+                              }))}
+                              rows={2}
+                              emptyText="暂无知识图谱材料。"
+                            />
+                          </div>
                         </div>
 
                         <div className="teacher-subsection">
@@ -1787,20 +1746,22 @@ export default function TeacherDashboard({ navigate }) {
                             <strong>课内归档文件</strong>
                             <span>{`${active?.syllabusFiles?.length ?? 0} 份`}</span>
                           </div>
-                          <MaterialShelf
-                            items={(active?.syllabusFiles ?? []).map((item) => ({
-                              ...item,
-                              onDownload: async (downloadItem) => {
-                                try {
-                                  await handleDownloadFile(downloadItem);
-                                } catch (actionError) {
-                                  setError(actionError instanceof Error ? actionError.message : '下载失败');
-                                }
-                              },
-                            }))}
-                            rows={1}
-                            emptyText="暂无课内归档文件。"
-                          />
+                          <div className="teacher-scroll-window">
+                            <MaterialShelf
+                              items={(active?.syllabusFiles ?? []).map((item) => ({
+                                ...item,
+                                onDownload: async (downloadItem) => {
+                                  try {
+                                    await handleDownloadFile(downloadItem);
+                                  } catch (actionError) {
+                                    setError(actionError instanceof Error ? actionError.message : '下载失败');
+                                  }
+                                },
+                              }))}
+                              rows={1}
+                              emptyText="暂无课内归档文件。"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
