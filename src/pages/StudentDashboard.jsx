@@ -58,6 +58,18 @@ const DEFAULT_PROFILE_METRICS = [
   { key: 'engagement_score', label: '学习投入' },
 ];
 
+const AGENT_TONE_OPTIONS = [
+  { value: 'friendly_pragmatic', label: '友善务实' },
+  { value: 'pragmatic', label: '直接务实' },
+  { value: 'encouraging', label: '鼓励引导' },
+];
+
+const AGENT_ANSWER_STYLE_OPTIONS = [
+  { value: 'normal', label: '标准回答' },
+  { value: 'concise', label: '简短准确' },
+  { value: 'detailed', label: '详细展开' },
+];
+
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -80,21 +92,6 @@ function formatProfileMetricValue(rawValue) {
   return `${normalizeProfileMetricValue(rawValue)}%`;
 }
 
-function getMasteryTone(level) {
-  const normalized = String(level ?? '').toLowerCase();
-
-  if (normalized === 'master') {
-    return 'success';
-  }
-  if (normalized === 'normal') {
-    return 'warning';
-  }
-  if (normalized === 'weak') {
-    return 'danger';
-  }
-  return 'neutral';
-}
-
 function formatMasteryLevel(level) {
   const normalized = String(level ?? '').toLowerCase();
 
@@ -111,6 +108,24 @@ function formatMasteryLevel(level) {
     return '尚未形成';
   }
   return '暂无';
+}
+
+function getMasteryLevelClassName(level) {
+  const normalized = String(level ?? '').toLowerCase();
+
+  if (normalized === 'master') {
+    return 'is-master';
+  }
+  if (normalized === 'normal') {
+    return 'is-normal';
+  }
+  if (normalized === 'weak') {
+    return 'is-weak';
+  }
+  if (normalized === 'none') {
+    return 'is-none';
+  }
+  return 'is-unknown';
 }
 
 function polarToCartesian(center, radius, angleDegrees) {
@@ -265,6 +280,81 @@ function buildRecommendationReason(candidate, nodeMap, recommendation, display) 
   return `推荐理由：这条路径在当前候选里综合评分最高，并且满足先修关系，建议按 ${titles.join(' -> ')} 的顺序推进。`;
 }
 
+function formatAgentIntentLabel(intent) {
+  switch (intent) {
+    case 'recommend_learning_path':
+      return '学习路径推荐';
+    case 'accept_recommendation':
+      return '采纳推荐路径';
+    case 'generate_current_step_resource':
+      return '生成当前资源';
+    case 'record_learning_feedback':
+      return '记录学习反馈';
+    case 'skip_current_step':
+      return '跳过当前步骤';
+    case 'answer_learning_question':
+      return '即时答疑';
+    case 'ask_goal_clarification':
+      return '目标澄清';
+    default:
+      return '总 Agent';
+  }
+}
+
+function formatAgentActionLabel(action) {
+  switch (action) {
+    case 'wait_user_acceptance':
+      return '等待采纳';
+    case 'generate_current_step_resource':
+      return '生成当前步骤资源';
+    case 'record_learning_feedback':
+      return '记录反馈';
+    case 'get_next_learning_task':
+      return '查看下一步';
+    case 'ask_goal_clarification':
+      return '补充目标';
+    case 'retry_recommendation':
+      return '重试推荐';
+    case 'continue_existing_plan':
+      return '继续当前计划';
+    case 'offer_practice_or_resource':
+      return '给出练习或资料';
+    case 'offer_resource':
+      return '推荐资料';
+    case 'offer_practice':
+      return '推荐练习';
+    case 'continue_current_step':
+      return '继续当前步骤';
+    case 'clarify_goal':
+      return '澄清目标';
+    default:
+      return action || '暂无';
+  }
+}
+
+function formatAgentQuestionTypeLabel(questionType) {
+  switch (questionType) {
+    case 'concept_explanation':
+      return '概念解释';
+    case 'learning_strategy':
+      return '学习策略';
+    case 'exercise_help':
+      return '习题帮助';
+    case 'unknown':
+      return '自动判断';
+    default:
+      return questionType || '未分类';
+  }
+}
+
+function formatAgentToneLabel(toneStyle) {
+  return AGENT_TONE_OPTIONS.find((item) => item.value === toneStyle)?.label ?? '默认语气';
+}
+
+function formatAgentAnswerStyleLabel(answerStyle) {
+  return AGENT_ANSWER_STYLE_OPTIONS.find((item) => item.value === answerStyle)?.label ?? '默认风格';
+}
+
 function buildRecommendationColumns(nodes = []) {
   const nodeMap = new Map(nodes.map((node) => [String(node.id), node]));
   const levelCache = new Map();
@@ -383,8 +473,6 @@ function LearningRecommendationPath({
       <div className="recommendation-toolbar">
         <div className="recommendation-summary-strip">
           <strong>{activeCandidate?.selected ? '当前最佳路径' : '候选路径'}</strong>
-          <span>{`候选 ${candidates.length} 条`}</span>
-          <span>{`图节点 ${nodes.length} 个`}</span>
         </div>
         <Button variant="primary" className="button-compact" disabled={loading} onClick={onRefresh}>
           {loading ? '刷新中...' : '刷新'}
@@ -1108,6 +1196,10 @@ export default function StudentDashboard({ navigate }) {
   const [questionInput, setQuestionInput] = useState('');
   const [questionAsked, setQuestionAsked] = useState(false);
   const [answer, setAnswer] = useState('');
+  const [agentTurn, setAgentTurn] = useState(null);
+  const [agentToneStyle, setAgentToneStyle] = useState('friendly_pragmatic');
+  const [agentAnswerStyle, setAgentAnswerStyle] = useState('normal');
+  const [agentConversationHistory, setAgentConversationHistory] = useState([]);
   const [askBusy, setAskBusy] = useState(false);
   const [initBusy, setInitBusy] = useState(false);
   const [recommendationLoading, setRecommendationLoading] = useState(false);
@@ -1272,13 +1364,6 @@ export default function StudentDashboard({ navigate }) {
     [learningProfile],
   );
   const resourceGenerationDisabled = isBooting || !active;
-  const stageProgressPercent = useMemo(() => {
-    if (!learningWeekCount || !currentWeekIndex) {
-      return 0;
-    }
-
-    return Math.max(6, Math.min(100, Math.round((currentWeekIndex / learningWeekCount) * 100)));
-  }, [currentWeekIndex, learningWeekCount]);
   const disabled = isBooting || !active || !active.isLearning || !active.personalSyllabus;
   const isStudentLoading = isBooting && !active;
 
@@ -1299,6 +1384,8 @@ export default function StudentDashboard({ navigate }) {
     setGeneratedResourcesError('');
     setSelectedGeneratedResourceId('');
     setGeneratedResourceDetail(null);
+    setAgentTurn(null);
+    setAgentConversationHistory([]);
   }, [activeId]);
 
   useEffect(() => {
@@ -1505,10 +1592,11 @@ export default function StudentDashboard({ navigate }) {
     setQuestionAsked(false);
     setQuestionInput('');
     setAnswer('');
+    setAgentTurn(null);
   };
 
   const recommendationItems = questionAsked
-    ? active?.recommendedMaterials ?? []
+    ? ((active?.recommendedMaterials?.length ? active.recommendedMaterials : active?.defaultRecommendations) ?? [])
     : active?.defaultRecommendations ?? [];
   const recommendationDownloadItems = recommendationItems.map((item) => ({
     ...item,
@@ -1523,6 +1611,22 @@ export default function StudentDashboard({ navigate }) {
       }
     },
   }));
+
+  const refreshStudyGraphBundle = async () => {
+    if (!active?.syllabusId) {
+      return;
+    }
+
+    const response = await getStudyGraph({
+      syllabusId: active.syllabusId,
+    });
+
+    if (!response.success) {
+      throw new Error(response.errorMessage || '个人知识树加载失败');
+    }
+
+    setStudyGraphBundle(response);
+  };
 
   const handleRefreshGeneratedResources = async () => {
     if (!active?.syllabusId) {
@@ -1555,6 +1659,89 @@ export default function StudentDashboard({ navigate }) {
       setGeneratedResourcesLoading(false);
     }
   };
+
+  const runAgentTurn = async (payload = {}) => {
+    if (!active?.syllabusId) {
+      return null;
+    }
+
+    const outgoingMessage = String(payload.message ?? payload.question ?? questionInput).trim();
+    if (!outgoingMessage) {
+      return null;
+    }
+
+    setAskBusy(true);
+    setError('');
+
+    try {
+      const response = await askQuestion({
+        syllabusId: active.syllabusId,
+        message: outgoingMessage,
+        question: payload.question ?? outgoingMessage,
+        intent: payload.intent ?? '',
+        autoAccept: payload.autoAccept ?? false,
+        candidateIndex: payload.candidateIndex ?? null,
+        recommendationResult: payload.recommendationResult ?? null,
+        resourceTypes: payload.resourceTypes ?? [],
+        toneStyle: payload.toneStyle ?? agentToneStyle,
+        answerStyle: payload.answerStyle ?? agentAnswerStyle,
+        messages: payload.messages ?? agentConversationHistory,
+        context: payload.context ?? {},
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.errorMessage || '提问失败');
+      }
+
+      const nextAnswer = response.answer || '本轮没有返回可展示的答复。';
+
+      setQuestionAsked(true);
+      setAnswer(nextAnswer);
+      setAgentTurn(response);
+      setAgentConversationHistory((current) => {
+        const next = [...current, { role: 'user', content: outgoingMessage }];
+        if (nextAnswer) {
+          next.push({ role: 'assistant', content: nextAnswer });
+        }
+        return next.slice(-6);
+      });
+
+      if (response.recommendation?.candidates?.length || response.recommendation?.bestPath) {
+        setRecommendationResult(response.recommendation);
+        setActiveRecommendationPathKey(getPathKey(response.recommendation.bestPath?.path ?? response.recommendation.candidates[0]?.path ?? []));
+      }
+
+      if (response.generatedResources?.length) {
+        await handleRefreshGeneratedResources();
+      }
+
+      if (response.intent === 'record_learning_feedback' || response.intent === 'skip_current_step') {
+        await refreshStudyGraphBundle();
+      }
+
+      if (response.recommendedMaterials?.length) {
+        patchActive((item) => {
+          item.recommendedMaterials = response.recommendedMaterials;
+          return item;
+        });
+      }
+
+      if (payload.clearInput !== false) {
+        setQuestionInput('');
+      }
+
+      return response;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : '提问失败');
+      return null;
+    } finally {
+      setAskBusy(false);
+    }
+  };
+
+  const canAcceptRecommendedPath = agentTurn?.suggestedNextAction === 'wait_user_acceptance'
+    && (agentTurn?.recommendation?.candidates?.length ?? 0) > 0;
+  const canGenerateCurrentStepResource = agentTurn?.suggestedNextAction === 'generate_current_step_resource';
 
   return (
     <MainLayout
@@ -1621,8 +1808,8 @@ export default function StudentDashboard({ navigate }) {
                 <strong>{currentWeekIndex ? `第${currentWeekIndex}周` : '未开始'}</strong>
               </div>
               <div className="student-hero-stat-card">
-                <span>画像总分</span>
-                <strong>{`${profileScore}/100`}</strong>
+                <span>已生成资源</span>
+                <strong>{generatedResources.length}</strong>
               </div>
               <div className="student-hero-stat-card">
                 <span>推荐材料</span>
@@ -1639,15 +1826,13 @@ export default function StudentDashboard({ navigate }) {
               onPrev={() => switchSyllabus(-1)}
               onNext={() => switchSyllabus(1)}
               disabled={isBooting || !syllabuses.length}
-              learningLabel={active?.isLearning ? '学习中' : '未学习'}
+              learningLabel={false}
             />
           </div>
 
           {active ? (
             <div className="student-dashboard-badges">
-              <StatusPill tone={questionAsked ? 'success' : 'neutral'}>
-                {questionAsked ? '答疑结果已更新' : '尚未提问'}
-              </StatusPill>
+              {questionAsked ? <StatusPill tone="success">答疑结果已更新</StatusPill> : null}
             </div>
           ) : null}
         </section>
@@ -1660,54 +1845,112 @@ export default function StudentDashboard({ navigate }) {
                 <div className="student-identity-copy">
                   <p className="student-section-kicker">Profile Card</p>
                   <h3>{active.title}</h3>
-                  <p>围绕当前课程提炼掌握状态、学习阶段和核心能力表现。</p>
-                </div>
-              </div>
-
-              <div className="student-identity-scoreband">
-                <div className="student-identity-score">
-                  <span>画像总分</span>
-                  <div className="student-identity-score-row">
-                    <strong>{profileScore}</strong>
-                    <small>/100</small>
-                  </div>
-                </div>
-                <div className="student-identity-level">
-                  <span>掌握等级</span>
-                  <StatusPill tone={getMasteryTone(learningProfile.knowledge_mastery?.overall_level)}>
-                    {formatMasteryLevel(learningProfile.knowledge_mastery?.overall_level)}
-                  </StatusPill>
-                </div>
-              </div>
-
-              <div className="student-stage-meter">
-                <div className="student-stage-meter-head">
-                  <span>当前学习阶段</span>
-                  <strong>{currentWeekIndex ? `第 ${currentWeekIndex} / ${learningWeekCount} 周` : '待开始'}</strong>
-                </div>
-                <div className="student-stage-meter-track">
-                  <div className="student-stage-meter-fill" style={{ width: `${stageProgressPercent}%` }} />
+                  <p>围绕当前课程整理当前进度、推荐状态和提问入口。</p>
                 </div>
               </div>
 
               <div className="student-identity-facts">
                 <div className="student-identity-fact-card">
-                  <span>路径候选</span>
-                  <strong>{recommendationResult.candidates?.length ?? 0}</strong>
+                  <span>课程状态</span>
+                  <strong>{active?.isLearning ? '学习中' : '待开始'}</strong>
                 </div>
                 <div className="student-identity-fact-card">
-                  <span>图节点</span>
-                  <strong>{recommendationResult.graph?.nodes?.length ?? 0}</strong>
-                </div>
-                <div className="student-identity-fact-card">
-                  <span>学习材料</span>
-                  <strong>{recommendationDownloadItems.length}</strong>
-                </div>
-                <div className="student-identity-fact-card">
-                  <span>画像置信度</span>
-                  <strong>{`${profileConfidence}%`}</strong>
+                  <span>当前周次</span>
+                  <strong>{currentWeekIndex ? `第${currentWeekIndex}周` : '未开始'}</strong>
                 </div>
               </div>
+
+              <section className="student-sidebar-question">
+                <div className="student-surface-head">
+                  <div className="student-surface-head-copy">
+                    <p className="student-section-kicker">Question</p>
+                    <h3>提问</h3>
+                    <p className="student-section-subcopy">系统会结合当前上下文，判断你是在提问、要推荐路径，还是要继续当前学习。</p>
+                  </div>
+                </div>
+                <label className="field">
+                  <span>问题</span>
+                  <textarea
+                    rows="4"
+                    value={questionInput}
+                    placeholder="例如：ETL 在这里具体负责什么？ / 推荐一条学习路径 / 继续当前学习"
+                    onChange={(event) => setQuestionInput(event.target.value)}
+                  />
+                </label>
+                <div className="agent-control-grid">
+                  <label className="field">
+                    <span>回答语气</span>
+                    <select
+                      className="select-field"
+                      value={agentToneStyle}
+                      onChange={(event) => setAgentToneStyle(event.target.value)}
+                    >
+                      {AGENT_TONE_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>回答风格</span>
+                    <select
+                      className="select-field"
+                      value={agentAnswerStyle}
+                      onChange={(event) => setAgentAnswerStyle(event.target.value)}
+                    >
+                      {AGENT_ANSWER_STYLE_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="tile-actions">
+                  <Button
+                    variant="primary"
+                    className="button-compact"
+                    disabled={askBusy || !questionInput.trim()}
+                    onClick={() => {
+                      void runAgentTurn({ clearInput: true });
+                    }}
+                  >
+                    {askBusy ? '处理中...' : '提问'}
+                  </Button>
+                  {canAcceptRecommendedPath ? (
+                    <Button
+                      variant="secondary"
+                      className="button-compact"
+                      disabled={askBusy}
+                      onClick={() => {
+                        void runAgentTurn({
+                          message: '确认采纳当前推荐路径',
+                          intent: 'accept_recommendation',
+                          autoAccept: true,
+                          candidateIndex: 0,
+                          recommendationResult: agentTurn.recommendation,
+                          clearInput: false,
+                        });
+                      }}
+                    >
+                      采纳路径
+                    </Button>
+                  ) : null}
+                  {canGenerateCurrentStepResource ? (
+                    <Button
+                      variant="secondary"
+                      className="button-compact"
+                      disabled={askBusy}
+                      onClick={() => {
+                        void runAgentTurn({
+                          message: '继续当前学习并生成资源',
+                          intent: 'generate_current_step_resource',
+                          clearInput: false,
+                        });
+                      }}
+                    >
+                      生成资源
+                    </Button>
+                  ) : null}
+                </div>
+              </section>
             </aside>
 
             <div className="student-mainstream">
@@ -1762,9 +2005,25 @@ export default function StudentDashboard({ navigate }) {
                     </div>
 
                     <div className="student-profile-side-panel">
-                      <div className="student-profile-level-line">
-                        <span>掌握等级</span>
-                        <strong>{formatMasteryLevel(learningProfile.knowledge_mastery?.overall_level)}</strong>
+                      <div className="student-identity-scoreband student-profile-summary-strip">
+                        <div className="student-identity-score">
+                          <span>画像总分</span>
+                          <div className="student-identity-score-row">
+                            <strong>{profileScore}</strong>
+                            <small>/100</small>
+                          </div>
+                        </div>
+                        <div className="student-identity-level">
+                          <span>掌握等级</span>
+                          <strong
+                            className={[
+                              'student-identity-level-value',
+                              getMasteryLevelClassName(learningProfile.knowledge_mastery?.overall_level),
+                            ].join(' ')}
+                          >
+                            {formatMasteryLevel(learningProfile.knowledge_mastery?.overall_level)}
+                          </strong>
+                        </div>
                       </div>
 
                       <div className="student-profile-metrics student-profile-metrics-compact">
@@ -1952,14 +2211,11 @@ export default function StudentDashboard({ navigate }) {
                   <section className="student-surface student-surface-qa">
                     <div className="student-surface-head">
                       <div className="student-surface-head-copy">
-                        <p className="student-section-kicker">Q&A</p>
-                        <h3>智能问答</h3>
-                        <p className="student-section-subcopy">面向当前课程直接提问，并把回答与大纲更新联动起来。</p>
+                        <p className="student-section-kicker">Question</p>
+                        <h3>提问</h3>
+                        <p className="student-section-subcopy">系统会结合当前上下文，判断你是在提问、要推荐路径，还是要继续当前学习。</p>
                       </div>
                       <div className="tile-head-controls">
-                        <StatusPill tone={questionAsked ? 'success' : 'neutral'}>
-                          {questionAsked ? '已提问' : '待提问'}
-                        </StatusPill>
                         <Button variant="ghost" onClick={() => setIsAnswerExpanded((current) => !current)}>
                           {isAnswerExpanded ? '收起' : '展开回答'}
                         </Button>
@@ -1969,59 +2225,63 @@ export default function StudentDashboard({ navigate }) {
                       <LoadingPlaceholder size="answer" />
                     ) : (
                       <DisabledBlock disabled={disabled} message="请先选择学习">
-                        <div className={['question-grid', isAnswerExpanded ? 'is-answer-expanded' : ''].filter(Boolean).join(' ')}>
-                          <section className="response-panel">
-                            <label className="field">
-                              <span>问题</span>
-                              <textarea
-                                rows="4"
-                                value={questionInput}
-                                placeholder="例如：ETL 在这里具体负责什么？"
-                                onChange={(event) => setQuestionInput(event.target.value)}
-                              />
-                            </label>
-                            <div className="tile-actions">
-                              <Button
-                                variant="primary"
-                                disabled={askBusy || !questionInput.trim()}
-                                onClick={async () => {
-                                  setAskBusy(true);
-                                  setError('');
-
-                                  try {
-                                    const response = await askQuestion({
-                                      syllabusId: active.syllabusId,
-                                      question: questionInput,
-                                    });
-
-                                    if (!response?.success) {
-                                      throw new Error(response?.errorMessage || '提问失败');
-                                    }
-
-                                    const personalSyllabus = await getPersonalSyllabus({ syllabusId: active.syllabusId });
-                                    setQuestionAsked(true);
-                                    setAnswer(response.answer);
-                                    patchActive((item) => {
-                                      item.recommendedMaterials = response.recommendedMaterials;
-                                      item.personalSyllabus = personalSyllabus ?? item.personalSyllabus;
-                                      return item;
-                                    });
-                                  } catch (actionError) {
-                                    setError(actionError instanceof Error ? actionError.message : '提问失败');
-                                  } finally {
-                                    setAskBusy(false);
-                                  }
-                                }}
-                              >
-                                {askBusy ? '处理中...' : '提交提问'}
-                              </Button>
-                            </div>
-                          </section>
+                        <div className={['question-grid', 'question-grid-answer-only', isAnswerExpanded ? 'is-answer-expanded' : ''].filter(Boolean).join(' ')}>
                           <section className={['response-panel', 'response-panel-answer', isAnswerExpanded ? 'is-expanded' : ''].filter(Boolean).join(' ')}>
                             <strong className="response-title">回答</strong>
+                            {agentTurn ? (
+                              <div className="agent-response-meta">
+                                <StatusPill tone="success">{formatAgentIntentLabel(agentTurn.intent)}</StatusPill>
+                                {agentTurn.answerPayload?.questionType ? (
+                                  <StatusPill tone="neutral">{formatAgentQuestionTypeLabel(agentTurn.answerPayload.questionType)}</StatusPill>
+                                ) : null}
+                                {agentTurn.suggestedNextAction ? (
+                                  <StatusPill tone="warning">{formatAgentActionLabel(agentTurn.suggestedNextAction)}</StatusPill>
+                                ) : null}
+                                <StatusPill tone="neutral">{formatAgentToneLabel(agentTurn.answerPayload?.tone?.tone_style ?? agentToneStyle)}</StatusPill>
+                                <StatusPill tone="neutral">{formatAgentAnswerStyleLabel(agentTurn.answerPayload?.tone?.answer_style ?? agentAnswerStyle)}</StatusPill>
+                              </div>
+                            ) : null}
                             <p className={['response-copy', isAnswerExpanded ? 'is-expanded' : 'is-condensed'].filter(Boolean).join(' ')}>
                               {answer || '尚未提问。'}
                             </p>
+                            {agentTurn?.answerPayload?.keyPoints?.length ? (
+                              <div className="agent-response-block">
+                                <strong>回答要点</strong>
+                                <div className="agent-response-list">
+                                  {agentTurn.answerPayload.keyPoints.map((item) => <span key={item}>{item}</span>)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {agentTurn?.answerPayload?.evidenceUsed?.length ? (
+                              <div className="agent-response-block">
+                                <strong>证据摘要</strong>
+                                <div className="agent-response-list">
+                                  {agentTurn.answerPayload.evidenceUsed.map((item, index) => (
+                                    <span key={`${item?.title ?? 'evidence'}-${index + 1}`}>
+                                      {item?.title ?? '资料'}{item?.relevance ? ` · ${item.relevance}` : ''}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                            {agentTurn?.toolTrace?.length ? (
+                              <div className="agent-response-block">
+                                <strong>Agent 处理阶段</strong>
+                                <div className="agent-response-list">
+                                  {agentTurn.toolTrace.map((item) => <span key={item}>{item}</span>)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {(agentTurn?.generatedResources?.length ?? 0) > 0 ? (
+                              <div className="agent-response-block">
+                                <strong>本轮已生成资源</strong>
+                                <div className="agent-response-list">
+                                  {agentTurn.generatedResources.map((item) => (
+                                    <span key={item.resourceId}>{item.title || item.topic || item.resourceType}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                           </section>
                         </div>
                       </DisabledBlock>

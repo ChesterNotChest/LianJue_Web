@@ -30,13 +30,169 @@ function parsePersonalSyllabusResponse(response) {
   return response?.syllabus ?? response?.personal_syllabus ?? null;
 }
 
+function normalizeGeneratedResourceType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'document') {
+    return 'documents';
+  }
+  if (normalized === 'mind_map') {
+    return 'mindmap';
+  }
+  if (normalized === 'practice' || normalized === 'code') {
+    return 'coding_practice';
+  }
+  return normalized;
+}
+
+function parseTotalAgentResourceSummary(item = {}) {
+  return {
+    resourceId: item.resource_id ?? '',
+    resourceType: normalizeGeneratedResourceType(item.resource_type ?? ''),
+    title: item.title ?? '',
+    topic: item.topic ?? '',
+    syllabusId: item.syllabus_id ?? null,
+    status: item.status ?? '',
+    resourceDir: item.resource_dir ?? '',
+    mainFiles: typeof item.main_files === 'object' && item.main_files ? item.main_files : {},
+    validation: typeof item.validation === 'object' && item.validation ? item.validation : {},
+    metadata: typeof item.metadata === 'object' && item.metadata ? item.metadata : {},
+    createdAt: item.created_at ?? null,
+    updatedAt: item.updated_at ?? null,
+    success: item.success !== false,
+    errorMessage: item.error_message ?? '',
+    errorCode: item.error_code ?? '',
+  };
+}
+
+function normalizeTotalAgentRecommendation(source = {}) {
+  const recommendation = typeof source?.recommendation === 'object' && source.recommendation
+    ? source.recommendation
+    : source;
+
+  return {
+    success: Boolean(recommendation?.success ?? source?.success),
+    graph: {
+      nodes: Array.isArray(recommendation?.graph?.nodes) ? recommendation.graph.nodes : [],
+      edges: Array.isArray(recommendation?.graph?.edges) ? recommendation.graph.edges : [],
+    },
+    candidates: Array.isArray(recommendation?.candidates) ? recommendation.candidates : [],
+    selected: Array.isArray(recommendation?.selected) ? recommendation.selected : [],
+    bestPath: recommendation?.best_path ?? null,
+    errorMessage: recommendation?.error_message ?? source?.error_message ?? '',
+    errorCode: recommendation?.error_code ?? source?.error_code ?? '',
+    meta: recommendation?.meta ?? null,
+  };
+}
+
+function buildTotalAgentAnswerText(intent, result = {}) {
+  const recommendation = normalizeTotalAgentRecommendation(result.recommendation);
+  const retryRecommendation = normalizeTotalAgentRecommendation(result.recommendation_retry);
+  const effectiveRecommendation = recommendation.candidates.length || recommendation.bestPath
+    ? recommendation
+    : retryRecommendation;
+  const acceptResult = typeof result?.accept_learning_plan === 'object' && result.accept_learning_plan
+    ? result.accept_learning_plan
+    : {};
+  const nextTask = result?.next_task?.next_task ?? result?.resource_generation?.next_task ?? {};
+  const resources = Array.isArray(result?.resource_generation?.resources) ? result.resource_generation.resources : [];
+
+  if (intent === 'answer_learning_question') {
+    return result?.answer_learning_question?.answer?.text ?? '';
+  }
+
+  if (intent === 'recommend_learning_path') {
+    if (effectiveRecommendation?.bestPath?.path?.length) {
+      return '已经识别出当前学习意图，并给出一条可采纳的学习路径。你可以先查看推荐区，再决定是否采纳。';
+    }
+    return '你的学习目标还不够清晰，当前没有稳定的推荐路径，建议补充更具体的知识点或目标。';
+  }
+
+  if (intent === 'accept_recommendation') {
+    if (acceptResult?.accepted) {
+      const nextTitle = nextTask?.title ?? nextTask?.node_id ?? '当前步骤';
+      return `推荐路径已采纳，接下来可以从“${nextTitle}”开始。`;
+    }
+    return '当前推荐还未正式采纳，可以确认后继续推进。';
+  }
+
+  if (intent === 'generate_current_step_resource') {
+    if (resources.length) {
+      const nextTitle = nextTask?.title ?? nextTask?.node_id ?? '当前步骤';
+      return `已围绕“${nextTitle}”生成 ${resources.length} 份学习资源，你可以在资源区查看。`;
+    }
+    return '当前步骤已识别，但暂时没有成功生成资源。';
+  }
+
+  if (intent === 'record_learning_feedback') {
+    const nextTitle = nextTask?.title ?? nextTask?.node_id ?? '';
+    return nextTitle
+      ? `学习反馈已记录，系统已经把你推进到下一步“${nextTitle}”。`
+      : '学习反馈已记录，当前计划状态已经更新。';
+  }
+
+  if (intent === 'skip_current_step') {
+    const nextTitle = nextTask?.title ?? nextTask?.node_id ?? '';
+    return nextTitle
+      ? `当前步骤已跳过，系统已切换到下一步“${nextTitle}”。`
+      : '当前步骤已跳过。';
+  }
+
+  if (intent === 'ask_goal_clarification') {
+    return '当前意图还不够明确。请补充你想学的知识点、目标、课程周次，或直接说“推荐路径”“继续学习”。';
+  }
+
+  return '';
+}
+
 function parseAskQuestionResponse(response) {
+  const result = typeof response?.result === 'object' && response.result ? response.result : {};
+  const answerPayload = typeof result?.answer_learning_question?.answer === 'object' && result.answer_learning_question.answer
+    ? result.answer_learning_question.answer
+    : {};
+  const recommendation = normalizeTotalAgentRecommendation(result?.recommendation);
+  const retryRecommendation = normalizeTotalAgentRecommendation(result?.recommendation_retry);
+  const effectiveRecommendation = recommendation.candidates.length || recommendation.bestPath ? recommendation : retryRecommendation;
+  const resourceGeneration = typeof result?.resource_generation === 'object' && result.resource_generation
+    ? result.resource_generation
+    : {};
+  const generatedResources = Array.isArray(resourceGeneration?.resources)
+    ? resourceGeneration.resources.map(parseTotalAgentResourceSummary)
+    : [];
+  const answerText = answerPayload?.text || buildTotalAgentAnswerText(response?.intent, result);
+
   return {
     success: Boolean(response?.success),
-    answer: response?.answer ?? '',
-    matchedFiles: Array.isArray(response?.matched_files) ? response.matched_files : [],
-    competanceList: Array.isArray(response?.competance_list) ? response.competance_list : [],
-    raw: response?.raw ?? null,
+    intent: response?.intent ?? '',
+    answer: answerText,
+    answerPayload: {
+      questionType: answerPayload?.question_type ?? '',
+      text: answerText,
+      keyPoints: Array.isArray(answerPayload?.key_points) ? answerPayload.key_points : [],
+      evidenceUsed: Array.isArray(answerPayload?.evidence_used) ? answerPayload.evidence_used : [],
+      planReference: typeof answerPayload?.plan_reference === 'object' && answerPayload.plan_reference ? answerPayload.plan_reference : {},
+      relevantWeakPoints: Array.isArray(answerPayload?.relevant_weak_points) ? answerPayload.relevant_weak_points : [],
+      filteredWeakPoints: Array.isArray(answerPayload?.filtered_weak_points) ? answerPayload.filtered_weak_points : [],
+      nextActions: Array.isArray(answerPayload?.next_actions) ? answerPayload.next_actions : [],
+      confidence: Number(answerPayload?.confidence ?? 0) || 0,
+      tone: typeof answerPayload?.tone === 'object' && answerPayload.tone ? answerPayload.tone : {},
+      warnings: Array.isArray(answerPayload?.warnings) ? answerPayload.warnings : [],
+    },
+    nextActions: Array.isArray(answerPayload?.next_actions) ? answerPayload.next_actions : [],
+    suggestedNextAction: response?.suggested_next_action ?? '',
+    matchedFiles: [],
+    competanceList: [],
+    toolTrace: Array.isArray(response?.tool_trace) ? response.tool_trace : [],
+    toolStatusEvents: Array.isArray(response?.tool_status_events) ? response.tool_status_events : [],
+    recommendation: effectiveRecommendation,
+    recommendationTool: typeof result?.recommendation === 'object' && result.recommendation ? result.recommendation : null,
+    recommendationRetryTool: typeof result?.recommendation_retry === 'object' && result.recommendation_retry ? result.recommendation_retry : null,
+    acceptLearningPlan: typeof result?.accept_learning_plan === 'object' && result.accept_learning_plan ? result.accept_learning_plan : null,
+    nextTask: result?.next_task?.next_task ?? resourceGeneration?.next_task ?? null,
+    resourceGeneration: resourceGeneration || null,
+    generatedResources,
+    context: typeof result?.context === 'object' && result.context ? result.context : null,
+    clarification: typeof result?.clarification === 'object' && result.clarification ? result.clarification : null,
+    raw: response ?? null,
     errorMessage: response?.error_message ?? '',
     errorCode: response?.error_code ?? '',
   };
@@ -147,21 +303,22 @@ function ensureStudyGraphFeatures(features, treeId = null) {
 }
 
 function parseStudyGraphResponse(response, options = {}) {
-  const userId = options.userId ?? response?.user_id ?? null;
-  const syllabusId = options.syllabusId ?? response?.syllabus_id ?? null;
-  const tree = ensureStudyGraphTree(response?.tree, userId, syllabusId);
-  const treeId = response?.tree_id ?? tree.tree_id ?? null;
+  const rawGraph = typeof response?.graph === 'object' && response.graph ? response.graph : response;
+  const userId = options.userId ?? rawGraph?.user_id ?? response?.user_id ?? null;
+  const syllabusId = options.syllabusId ?? rawGraph?.syllabus_id ?? response?.syllabus_id ?? null;
+  const tree = ensureStudyGraphTree(rawGraph?.tree, userId, syllabusId);
+  const treeId = rawGraph?.tree_id ?? response?.tree_id ?? tree.tree_id ?? null;
 
   return {
-    success: Boolean(response?.success),
+    success: Boolean(response?.success ?? rawGraph?.success),
     userId,
     syllabusId,
     treeId,
     tree,
-    features: ensureStudyGraphFeatures(response?.features, treeId),
-    changes: Array.isArray(response?.changes) ? response.changes : [],
-    toolTrace: Array.isArray(response?.tool_trace) ? response.tool_trace : [],
-    debug: response?.debug ?? null,
+    features: ensureStudyGraphFeatures(rawGraph?.features ?? response?.features, treeId),
+    changes: Array.isArray(rawGraph?.changes) ? rawGraph.changes : [],
+    toolTrace: Array.isArray(rawGraph?.tool_trace) ? rawGraph.tool_trace : [],
+    debug: rawGraph?.debug ?? response?.debug ?? null,
     errorMessage: response?.error_message ?? '',
     errorCode: response?.error_code ?? '',
   };
@@ -464,21 +621,215 @@ export async function getPersonalSyllabusRaw(syllabusId, userId = null) {
 export async function askQuestionRaw(payload = {}) {
   const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
   if (!USE_MOCK_API) {
-    return apiPost('/api/learning_ask_question', {
+    return apiPost('/api/total_agent/run', {
       user_id: userId,
       syllabus_id: payload.syllabusId ?? payload.syllabus_id,
-      question: payload.question ?? '',
+      message: payload.message ?? payload.question ?? '',
+      question: payload.question ?? payload.message ?? '',
+      intent: payload.intent ?? '',
+      auto_accept: payload.autoAccept ?? payload.auto_accept ?? false,
+      candidate_index: payload.candidateIndex ?? payload.candidate_index ?? null,
+      recommendation_result: payload.recommendationResult ?? payload.recommendation_result ?? null,
+      resource_types: payload.resourceTypes ?? payload.resource_types ?? [],
+      tone_style: payload.toneStyle ?? payload.tone_style ?? '',
+      answer_style: payload.answerStyle ?? payload.answer_style ?? '',
+      question_type_hint: payload.questionTypeHint ?? payload.question_type_hint ?? '',
+      profile_read_action: payload.profileReadAction ?? payload.profile_read_action ?? '',
+      conversation_history: payload.conversationHistory ?? payload.conversation_history ?? payload.messages ?? [],
+      context: payload.context ?? {},
     });
+  }
+
+  const text = String(payload.message ?? payload.question ?? '').trim();
+  const normalized = text.toLowerCase();
+  if (!text) {
+    return {
+      success: true,
+      schema_version: 'total_agent.v1',
+      intent: 'ask_goal_clarification',
+      tool_trace: ['load_total_context', 'infer_user_intent'],
+      tool_status_events: [],
+      result: {
+        clarification: {
+          reason: 'need clearer learning goal',
+        },
+      },
+      suggested_next_action: 'ask_goal_clarification',
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  if (
+    payload.intent === 'accept_recommendation'
+    || payload.autoAccept
+    || normalized.includes('确认')
+    || normalized.includes('采纳')
+    || normalized.includes('accept')
+  ) {
+    return {
+      success: true,
+      schema_version: 'total_agent.v1',
+      intent: 'accept_recommendation',
+      tool_trace: ['load_total_context', 'infer_user_intent', 'accept_learning_plan', 'get_next_learning_task'],
+      tool_status_events: [],
+      result: {
+        accept_learning_plan: {
+          success: true,
+          accepted: true,
+          plan: { plan_id: 'mock-plan-1' },
+          next_task: {
+            step_id: 'step-1',
+            node_id: 'hbase_intro',
+            title: 'HBase 基础',
+            status: 'active',
+          },
+        },
+        next_task: {
+          success: true,
+          next_task: {
+            step_id: 'step-1',
+            node_id: 'hbase_intro',
+            title: 'HBase 基础',
+            status: 'active',
+          },
+        },
+      },
+      suggested_next_action: 'generate_current_step_resource',
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  if (
+    payload.intent === 'generate_current_step_resource'
+    || normalized.includes('继续')
+    || normalized.includes('资料')
+    || normalized.includes('resource')
+  ) {
+    return {
+      success: true,
+      schema_version: 'total_agent.v1',
+      intent: 'generate_current_step_resource',
+      tool_trace: ['load_total_context', 'infer_user_intent', 'get_next_learning_task', 'generate_current_step_resource'],
+      tool_status_events: [],
+      result: {
+        next_task: {
+          success: true,
+          next_task: {
+            step_id: 'step-1',
+            node_id: 'hbase_intro',
+            title: 'HBase 基础',
+            status: 'active',
+          },
+        },
+        resource_generation: {
+          success: true,
+          next_task: {
+            step_id: 'step-1',
+            node_id: 'hbase_intro',
+            title: 'HBase 基础',
+            status: 'active',
+          },
+          resources: [
+            {
+              resource_id: 'documents-mock-1',
+              resource_type: 'documents',
+              title: 'HBase 基础讲解文档',
+              topic: 'HBase 基础',
+              status: 'ready',
+            },
+          ],
+        },
+      },
+      suggested_next_action: 'record_learning_feedback',
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  if (normalized.includes('推荐') || normalized.includes('路径') || normalized.includes('怎么学')) {
+    return {
+      success: true,
+      schema_version: 'total_agent.v1',
+      intent: 'recommend_learning_path',
+      tool_trace: ['load_total_context', 'infer_user_intent', 'run_learning_recommendation'],
+      tool_status_events: [],
+      result: {
+        recommendation: {
+          success: true,
+          recommendation: {
+            success: true,
+            graph: {
+              nodes: [
+                { id: 'hbase_intro', title: 'HBase 基础' },
+                { id: 'rowkey_design', title: 'RowKey 设计' },
+              ],
+              edges: [
+                { source: 'hbase_intro', target: 'rowkey_design' },
+              ],
+            },
+            candidates: [
+              {
+                path: ['hbase_intro', 'rowkey_design'],
+                selected: true,
+              },
+            ],
+            selected: [
+              {
+                path: ['hbase_intro', 'rowkey_design'],
+                selected: true,
+              },
+            ],
+            best_path: {
+              path: ['hbase_intro', 'rowkey_design'],
+              selected: true,
+            },
+          },
+        },
+      },
+      suggested_next_action: 'wait_user_acceptance',
+      error_message: '',
+      error_code: '',
+    };
   }
 
   return {
     success: true,
-    ...cloneData(RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1),
-    request: {
-      user_id: userId,
-      syllabus_id: payload.syllabusId ?? null,
-      question: payload.question ?? '',
+    schema_version: 'total_agent.v1',
+    intent: 'answer_learning_question',
+    tool_trace: ['load_total_context', 'infer_user_intent', 'retrieve_learning_evidence', 'answer_learning_question'],
+    tool_status_events: [],
+    result: {
+      answer_learning_question: {
+        success: true,
+        answer: {
+          question_type: 'concept_explanation',
+          text: cloneData(RAW_ASK_QUESTION_RESPONSE_FOR_USER_7_SYLLABUS_1.answer ?? '这里会返回总 Agent 的回答。'),
+          key_points: ['围绕当前问题给出解释', '结合当前课程上下文继续学习'],
+          evidence_used: [
+            { title: '课程资料', source: 'RAG', relevance: 'medium' },
+          ],
+          plan_reference: {},
+          next_actions: [
+            {
+              action: 'offer_resource',
+              label_key: 'agent.answer.next_action.offer_resource',
+              resource_type: 'documents',
+            },
+          ],
+          confidence: 0.82,
+          tone: {
+            tone_style: payload.toneStyle ?? payload.tone_style ?? 'friendly_pragmatic',
+            answer_style: payload.answerStyle ?? payload.answer_style ?? 'normal',
+          },
+          warnings: [],
+        },
+      },
     },
+    suggested_next_action: 'offer_practice_or_resource',
+    error_message: '',
+    error_code: '',
   };
 }
 
@@ -745,6 +1096,7 @@ export async function getStudyGraphRaw(payload = {}) {
 
   const detail = await getStudyGraphDetailRaw({ userId, syllabusId, includeDebug: payload.includeDebug ?? payload.include_debug ?? false });
   const features = await getStudyGraphFeaturesRaw({ userId, syllabusId });
+  const detailGraph = typeof detail?.graph === 'object' && detail.graph ? detail.graph : detail;
 
   const detailLooksUnavailable = !detail?.success && (detail?.error_code === 'invalid_json_response');
   const featureLooksUnavailable = !features?.success && (features?.error_code === 'invalid_json_response');
@@ -761,10 +1113,10 @@ export async function getStudyGraphRaw(payload = {}) {
     success: Boolean(detail?.success) && Boolean(features?.success),
     user_id: userId,
     syllabus_id: syllabusId,
-    tree_id: detail?.tree_id ?? features?.tree_id ?? null,
-    tree: detail?.tree ?? null,
+    tree_id: detailGraph?.tree_id ?? features?.tree_id ?? null,
+    tree: detailGraph?.tree ?? null,
     features: features?.features ?? null,
-    debug: detail?.debug ?? {},
+    debug: detailGraph?.debug ?? {},
     error_message: detail?.error_message || features?.error_message || '',
     error_code: detail?.error_code || features?.error_code || '',
   };
@@ -877,8 +1229,9 @@ export async function runStudyGraphAgent(payload = {}) {
 
 export async function askQuestion(payload = {}) {
   const parsed = parseAskQuestionResponse(await askQuestionRaw(payload));
-  const syllabusFiles = payload.syllabusId ? await listSyllabusFiles([payload.syllabusId]) : [];
   const rawDocumentNames = Array.isArray(parsed.raw?.document_names) ? parsed.raw.document_names : [];
+  const shouldLoadSyllabusFiles = Boolean(payload.syllabusId) && (parsed.matchedFiles.length > 0 || rawDocumentNames.length > 0);
+  const syllabusFiles = shouldLoadSyllabusFiles ? await listSyllabusFiles([payload.syllabusId]) : [];
 
   const fileIdRecommendationItems = await buildRecommendationItemsByFileIds(parsed.matchedFiles, syllabusFiles);
   const documentNameRecommendationItems = buildRecommendationItemsByDocumentNames(syllabusFiles, rawDocumentNames);

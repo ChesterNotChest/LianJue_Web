@@ -34,6 +34,33 @@ function LoadingPlaceholder({ label = '加载中', size = 'card' }) {
   );
 }
 
+function getMaterialFileTypeMeta(item = {}) {
+  const title = String(item?.title ?? '').trim();
+  const source = String(item?.source ?? '').trim();
+  const path = String(item?.path ?? '').trim();
+  const signature = `${title} ${path} ${source}`.toLowerCase();
+  const extensionMatch = title.match(/\.([a-z0-9]+)$/i) ?? path.match(/\.([a-z0-9]+)$/i);
+  const extension = extensionMatch?.[1]?.toLowerCase() ?? '';
+
+  if (extension === 'pdf' || signature.includes('pdf')) {
+    return { key: 'pdf', shortLabel: 'PDF', label: 'PDF 文档' };
+  }
+  if (['doc', 'docx'].includes(extension) || signature.includes('word')) {
+    return { key: 'word', shortLabel: 'WORD', label: 'Word 文档' };
+  }
+  if (['ppt', 'pptx'].includes(extension) || signature.includes('powerpoint') || signature.includes('ppt')) {
+    return { key: 'ppt', shortLabel: 'PPT', label: 'PPT 课件' };
+  }
+  if (['xls', 'xlsx', 'csv'].includes(extension) || signature.includes('excel')) {
+    return { key: 'sheet', shortLabel: 'XLS', label: '表格材料' };
+  }
+  if (['md', 'txt'].includes(extension) || signature.includes('markdown')) {
+    return { key: 'text', shortLabel: 'TXT', label: '文本材料' };
+  }
+
+  return { key: 'file', shortLabel: 'FILE', label: '课程文件' };
+}
+
 function Stepper({ steps, currentStep, allowStep, onSelect }) {
   return (
     <div className="stepper">
@@ -112,7 +139,7 @@ function SyllabusSwitcher({ items, activeId, onChange, onPrev, onNext, disabled 
             {current.permission}
           </StatusPill>
         ) : null}
-        {typeof current?.isLearning === 'boolean' ? (
+        {typeof current?.isLearning === 'boolean' && learningLabel !== false ? (
           <StatusPill tone={current.isLearning ? 'success' : 'warning'}>
             {learningLabel ?? (current.isLearning ? '学习中' : '未学习')}
           </StatusPill>
@@ -317,6 +344,7 @@ function MaterialShelf({ items, emptyText = '暂无材料。', rows = 2 }) {
           const itemKey = `${item.fileId ?? 'no-file'}-${item.title}-${index}`;
           const isOverflowing = Boolean(overflowMap[itemKey]);
           const isExpanded = expandedKey === itemKey;
+          const fileTypeMeta = getMaterialFileTypeMeta(item);
 
           return (
             <article
@@ -356,40 +384,46 @@ function MaterialShelf({ items, emptyText = '暂无材料。', rows = 2 }) {
                 }
               } : undefined}
             >
-              <div className="material-chip-head">
-                <strong
-                  ref={(element) => {
-                    if (element) {
-                      titleRefs.current.set(itemKey, element);
-                    } else {
-                      titleRefs.current.delete(itemKey);
-                    }
-                  }}
-                  className="material-chip-title"
-                  title={isOverflowing ? item.title : undefined}
-                >
-                  {item.title}
-                </strong>
-                <div className="material-chip-actions">
-                  {item.tagText ? <StatusPill tone={item.tagTone ?? 'neutral'}>{item.tagText}</StatusPill> : null}
-                  {isDownloadable ? (
-                    <Button
-                      variant="ghost"
-                      className="button-compact material-chip-download"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        item.onDownload(item);
-                      }}
-                    >
-                      下载
-                    </Button>
-                  ) : null}
-                </div>
+              <div className={`material-chip-fileicon is-${fileTypeMeta.key}`} aria-hidden="true">
+                <span>{fileTypeMeta.shortLabel}</span>
+                <small>{fileTypeMeta.label}</small>
               </div>
-              <small>
-                {item.source}
-                {item.weekLabel ? ` / ${item.weekLabel}` : ''}
-              </small>
+              <div className="material-chip-copy">
+                <div className="material-chip-head">
+                  <strong
+                    ref={(element) => {
+                      if (element) {
+                        titleRefs.current.set(itemKey, element);
+                      } else {
+                        titleRefs.current.delete(itemKey);
+                      }
+                    }}
+                    className="material-chip-title"
+                    title={isOverflowing ? item.title : undefined}
+                  >
+                    {item.title}
+                  </strong>
+                  <div className="material-chip-actions">
+                    {item.tagText ? <StatusPill tone={item.tagTone ?? 'neutral'}>{item.tagText}</StatusPill> : null}
+                    {isDownloadable ? (
+                      <Button
+                        variant="ghost"
+                        className="button-compact material-chip-download"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          item.onDownload(item);
+                        }}
+                      >
+                        下载
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <small className="material-chip-meta">
+                  {item.source}
+                  {item.weekLabel ? ` / ${item.weekLabel}` : ''}
+                </small>
+              </div>
             </article>
           );
         })}
