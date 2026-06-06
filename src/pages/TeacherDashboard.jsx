@@ -1452,7 +1452,7 @@ export default function TeacherDashboard({ navigate }) {
   return (
     <>
       <MainLayout
-        title="教师 Dashboard"
+        title="教师工作台"
         actions={(
           <div className="header-actions">
             <Button variant="secondary" onClick={() => navigate('/login')}>返回登录</Button>
@@ -1460,78 +1460,205 @@ export default function TeacherDashboard({ navigate }) {
           </div>
         )}
       >
-        <section className="dashboard-shell">
-          <section className="dashboard-hero">
-            <SyllabusSwitcher
-              items={syllabuses}
-              activeId={activeId ?? 0}
-              onChange={setActiveId}
-              onPrev={() => switchSyllabus(-1)}
-              onNext={() => switchSyllabus(1)}
-              disabled={isBooting || !syllabuses.length}
-            />
+        <section className="dashboard-shell teacher-dashboard-shell">
+          <section className="dashboard-hero teacher-dashboard-hero">
+            <div className="teacher-dashboard-hero-main student-dashboard-hero-main">
+              <div className="student-dashboard-copy teacher-dashboard-copy">
+                <p className="student-dashboard-kicker">Teacher Workspace</p>
+                <h2>{active ? `${active.title} 教学工作台` : '教师工作台'}</h2>
+                <p>集中处理教学大纲、知识材料和习题构建，按课程生命周期维护一整套教学资源。</p>
+              </div>
+
+              <div className="teacher-dashboard-hero-stats student-dashboard-hero-stats">
+                <div className="student-hero-stat-card">
+                  <span>大纲状态</span>
+                  <strong>{syllabusProgress.label}</strong>
+                </div>
+                <div className="student-hero-stat-card">
+                  <span>当前周次</span>
+                  <strong>{activeCurrentWeek ? `第${activeCurrentWeek}周` : '未开始'}</strong>
+                </div>
+                <div className="student-hero-stat-card">
+                  <span>知识材料</span>
+                  <strong>{active?.graphFileCount ?? 0}</strong>
+                </div>
+                <div className="student-hero-stat-card">
+                  <span>习题草稿</span>
+                  <strong>{active?.materialDrafts?.length ?? 0}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="teacher-dashboard-switcher">
+              <SyllabusSwitcher
+                items={syllabuses}
+                activeId={activeId ?? 0}
+                onChange={setActiveId}
+                onPrev={() => switchSyllabus(-1)}
+                onNext={() => switchSyllabus(1)}
+                disabled={isBooting || !syllabuses.length}
+              />
+            </div>
+
+            {active ? (
+              <div className="teacher-dashboard-badges">
+                {active.permission ? <StatusPill tone={active.permission === 'owner' ? 'success' : 'neutral'}>{active.permission}</StatusPill> : null}
+                {active.graphName ? <StatusPill tone="neutral">{active.graphName}</StatusPill> : null}
+                <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
+                  {weakKnowledge ? '知识来源过少' : '知识来源充足'}
+                </StatusPill>
+              </div>
+            ) : null}
           </section>
 
           {error ? <EmptyState>{error}</EmptyState> : null}
           {!error && !active && !isBooting ? <EmptyState>暂无教学大纲。</EmptyState> : null}
 
           {showTeacherShell ? (
-            <section className="dashboard-grid dashboard-grid-teacher">
-              <article className="tile-card tile-teal tile-span-full">
-                <div className="tile-card-head">
-                  <h3>教学大纲总览</h3>
-                  <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
-                    {weakKnowledge ? '知识来源过少' : '可交互'}
-                  </StatusPill>
+            <section className="teacher-page-body">
+              <aside className="student-identity-card teacher-identity-card">
+                <div className="student-identity-top">
+                  <div className="student-identity-avatar teacher-identity-avatar">教</div>
+                  <div className="student-identity-copy">
+                    <p className="student-section-kicker">Teaching Desk</p>
+                    <h3>{active?.title ?? '当前课程'}</h3>
+                    <p>围绕单门课程管理教学大纲、知识材料解析和题库生产。</p>
+                  </div>
                 </div>
-                {isTeacherVisibleLoading ? (
-                  <LoadingPlaceholder size="axis" />
-                ) : (
-                <DisabledBlock
-                  disabled={overviewDisabled}
-                  message={weakKnowledge ? '知识来源过少' : '等待数据加载或教学日历上传'}
-                >
-                  <WeekAxis
-                    items={active.finalData?.period ?? []}
-                    currentWeek={activeCurrentWeek}
-                    expandedItemId={expandedTeacherWeekId}
-                    onToggleExpand={(itemId) => {
-                      setExpandedTeacherWeekId((current) => (current === itemId ? null : itemId));
-                    }}
-                  />
-                </DisabledBlock>
-                )}
-              </article>
 
-              <div className="teacher-side-stack">
-                <article className="tile-card tile-amber tile-third">
-                  <div className="tile-card-head">
-                    <h3>教学大纲</h3>
-                    <StatusPill tone={syllabusProgress.tone}>{syllabusProgress.label}</StatusPill>
+                <div className="student-identity-facts teacher-identity-facts">
+                  <div className="student-identity-fact-card">
+                    <span>课程权限</span>
+                    <strong>{active?.permission ?? '未知'}</strong>
+                  </div>
+                  <div className="student-identity-fact-card">
+                    <span>知识图谱</span>
+                    <strong>{active?.graphName ?? '未绑定'}</strong>
+                  </div>
+                  <div className="student-identity-fact-card">
+                    <span>教学日历</span>
+                    <strong>{active?.status?.isEduCalendarMissing ? '待上传' : '已上传'}</strong>
+                  </div>
+                  <div className="student-identity-fact-card">
+                    <span>材料解析</span>
+                    <strong>{`${active?.graphFileCount ?? 0} 份`}</strong>
+                  </div>
+                </div>
+
+                <section className="teacher-sidebar-actions">
+                  <div className="student-surface-head">
+                    <div className="student-surface-head-copy">
+                      <p className="student-section-kicker">Actions</p>
+                      <h3>教师操作</h3>
+                      <p className="student-section-subcopy">从这里进入教学大纲编辑与习题构建，不改动当前页面主视图。</p>
+                    </div>
+                  </div>
+                  <div className="tile-actions">
+                    <Button
+                      variant="primary"
+                      disabled={!active || isTeacherVisibleLoading}
+                      onClick={() => {
+                        if (!active) {
+                          return;
+                        }
+                        setBuildModal(createBuildState(active));
+                      }}
+                    >
+                      {active?.status?.isFinalMissing ? '创建教学大纲' : '编辑教学大纲'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={!active || isTeacherVisibleLoading || materialDisabled || weakKnowledge}
+                      onClick={() => {
+                        if (!active) {
+                          return;
+                        }
+                        setMaterialModal(createMaterialState(active));
+                      }}
+                    >
+                      打开习题构建
+                    </Button>
+                  </div>
+                </section>
+
+                <section className="teacher-sidebar-status">
+                  <p className="student-section-kicker">Status</p>
+                  <div className="teacher-status-list">
+                    <div className="teacher-status-row">
+                      <span>教学大纲</span>
+                      <StatusPill tone={syllabusProgress.tone}>{syllabusProgress.label}</StatusPill>
+                    </div>
+                    <div className="teacher-status-row">
+                      <span>知识材料质量</span>
+                      <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
+                        {weakKnowledge ? '偏少' : '可用'}
+                      </StatusPill>
+                    </div>
+                    <div className="teacher-status-row">
+                      <span>习题构建</span>
+                      <StatusPill tone={materialDisabled || weakKnowledge ? 'warning' : 'success'}>
+                        {materialDisabled || weakKnowledge ? '等待条件' : '可编辑'}
+                      </StatusPill>
+                    </div>
+                  </div>
+                </section>
+              </aside>
+
+              <div className="teacher-mainstream">
+                <section className="student-surface teacher-surface teacher-surface-overview">
+                  <div className="student-surface-head">
+                    <div className="student-surface-head-copy">
+                      <p className="student-section-kicker">Syllabus</p>
+                      <h3>教学大纲总览</h3>
+                      <p className="student-section-subcopy">按课程周次查看当前终稿大纲，直接把一门课的节奏铺开检查。</p>
+                    </div>
+                    <div className="tile-head-controls">
+                      <StatusPill tone={weakKnowledge ? 'danger' : 'success'}>
+                        {weakKnowledge ? '知识来源过少' : '可交互'}
+                      </StatusPill>
+                    </div>
                   </div>
                   {isTeacherVisibleLoading ? (
-                    <LoadingPlaceholder size="panel" />
+                    <LoadingPlaceholder size="axis" />
                   ) : (
-                    <DisabledBlock disabled={weakKnowledge} message="知识过少，暂不允许交互">
-                      <div className="tile-actions">
-                        <Button
-                          variant="primary"
-                          onClick={() => {
-                            setBuildModal(createBuildState(active));
-                          }}
-                        >
-                          {active.status.isFinalMissing ? '创建教学大纲' : '编辑教学大纲'}
-                        </Button>
-                      </div>
+                    <DisabledBlock
+                      disabled={overviewDisabled}
+                      message={weakKnowledge ? '知识来源过少' : '等待数据加载或教学日历上传'}
+                    >
+                      <WeekAxis
+                        items={active.finalData?.period ?? []}
+                        currentWeek={activeCurrentWeek}
+                        expandedItemId={expandedTeacherWeekId}
+                        onToggleExpand={(itemId) => {
+                          setExpandedTeacherWeekId((current) => (current === itemId ? null : itemId));
+                        }}
+                      />
                     </DisabledBlock>
                   )}
-                </article>
-                <article className="tile-card tile-blue tile-third">
-                  <div className="tile-card-head">
-                    <h3>教学习题构建</h3>
-                    <StatusPill tone={materialDisabled || weakKnowledge ? 'warning' : 'success'}>
-                      {materialDisabled || weakKnowledge ? '不可用' : '可编辑'}
-                    </StatusPill>
+                </section>
+
+                <section className="student-surface teacher-surface teacher-surface-material-builder">
+                  <div className="student-surface-head">
+                    <div className="student-surface-head-copy">
+                      <p className="student-section-kicker">Exercises</p>
+                      <h3>教学习题构建</h3>
+                      <p className="student-section-subcopy">查看已有习题草稿和终稿状态，并通过弹窗继续完成生成、修订和发布。</p>
+                    </div>
+                    <div className="tile-head-controls">
+                      <Button
+                        variant="primary"
+                        className="button-compact"
+                        disabled={!active || isTeacherVisibleLoading || materialDisabled || weakKnowledge}
+                        onClick={() => {
+                          if (!active) {
+                            return;
+                          }
+                          setMaterialModal(createMaterialState(active));
+                        }}
+                      >
+                        打开构建器
+                      </Button>
+                    </div>
                   </div>
                   {isTeacherVisibleLoading ? (
                     <LoadingPlaceholder size="shelf" />
@@ -1554,94 +1681,132 @@ export default function TeacherDashboard({ navigate }) {
                         rows={2}
                         emptyText="暂无习题文件。"
                       />
-                      <div className="tile-actions">
-                        <Button
-                          variant="primary"
-                          onClick={() => {
-                            setMaterialModal(createMaterialState(active));
-                          }}
-                        >
-                          打开弹窗
-                        </Button>
-                      </div>
                     </DisabledBlock>
                   )}
-                </article>
-              </div>
-              <article className="tile-card tile-slate tile-two-thirds">
-                <div className="tile-card-head">
-                  <h3>教学材料</h3>
-                </div>
-                {isTeacherVisibleLoading ? (
-                  <>
-                    <LoadingPlaceholder size="panel" />
-                    <LoadingPlaceholder size="shelf" />
-                  </>
-                ) : (
-                  <>
-                    <div className="study-mode compact-mode">
-                      <FileDropzone
-                        files={materialUploadFiles}
-                        onFilesChange={setMaterialUploadFiles}
-                        multiple
-                        compact
-                        title="选择教学材料 / dropbox"
-                      />
-                      <div className="tile-actions">
-                        <Button
-                          variant="secondary"
-                          disabled={materialUploadBusy || !materialUploadFiles.length || !active.graphId}
-                          onClick={async () => {
-                            setMaterialUploadBusy(true);
-                            try {
-                              const nextFiles = await Promise.all(
-                                materialUploadFiles.map(async (file) => {
-                                  const uploadResponse = await uploadFile({ file });
-                                  if (!uploadResponse.success || !uploadResponse.file?.file_id) {
-                                    throw new Error(uploadResponse.error_message || '上传教学材料失败');
-                                  }
-                                  const fileDetail = await getFileDetail(uploadResponse.file.file_id);
-                                  if (!fileDetail?.fileId) {
-                                    throw new Error('get file detail failed');
-                                  }
-                                  const jobResponse = await createJob({
-                                    graphId: active.graphId,
-                                    fileId: uploadResponse.file.file_id,
-                                  });
-                                  if (!jobResponse.success) {
-                                    throw new Error(jobResponse.errorMessage || '创建解析任务失败');
-                                  }
-                                  return {
-                                    fileId: fileDetail.fileId,
-                                    title: fileDetail.title,
-                                    source: 'graph-file',
-                                    weekLabel: '',
-                                    tagText: 'pending / pdf_to_md',
-                                    tagTone: 'warning',
-                                  };
-                                }),
-                              );
-                              patchActive((item) => {
-                                item.graphFiles = [...nextFiles, ...item.graphFiles];
-                                item.graphFileCount = item.graphFiles.length;
-                                return item;
-                              });
-                              setMaterialUploadFiles([]);
-                            } catch (actionError) {
-                              setError(actionError instanceof Error ? actionError.message : '上传教学材料失败');
-                            } finally {
-                              setMaterialUploadBusy(false);
-                            }
-                          }}
-                        >
-                          {materialUploadBusy ? '处理中...' : '上传教学材料'}
-                        </Button>
+                </section>
+
+                <section className="student-surface teacher-surface teacher-surface-materials">
+                  <div className="student-surface-head">
+                    <div className="student-surface-head-copy">
+                      <p className="student-section-kicker">Materials</p>
+                      <h3>教学材料</h3>
+                      <p className="student-section-subcopy">上传知识材料触发解析任务，并查看知识图谱材料与课内归档文件。</p>
+                    </div>
+                  </div>
+                  {isTeacherVisibleLoading ? (
+                    <>
+                      <LoadingPlaceholder size="panel" />
+                      <LoadingPlaceholder size="shelf" />
+                    </>
+                  ) : (
+                    <div className="teacher-material-groups">
+                      <div className="study-mode compact-mode teacher-upload-band">
+                        <FileDropzone
+                          files={materialUploadFiles}
+                          onFilesChange={setMaterialUploadFiles}
+                          multiple
+                          compact
+                          title="选择教学材料 / dropbox"
+                        />
+                        <div className="tile-actions">
+                          <Button
+                            variant="secondary"
+                            disabled={materialUploadBusy || !materialUploadFiles.length || !active.graphId}
+                            onClick={async () => {
+                              setMaterialUploadBusy(true);
+                              try {
+                                const nextFiles = await Promise.all(
+                                  materialUploadFiles.map(async (file) => {
+                                    const uploadResponse = await uploadFile({ file });
+                                    if (!uploadResponse.success || !uploadResponse.file?.file_id) {
+                                      throw new Error(uploadResponse.error_message || '上传教学材料失败');
+                                    }
+                                    const fileDetail = await getFileDetail(uploadResponse.file.file_id);
+                                    if (!fileDetail?.fileId) {
+                                      throw new Error('get file detail failed');
+                                    }
+                                    const jobResponse = await createJob({
+                                      graphId: active.graphId,
+                                      fileId: uploadResponse.file.file_id,
+                                    });
+                                    if (!jobResponse.success) {
+                                      throw new Error(jobResponse.errorMessage || '创建解析任务失败');
+                                    }
+                                    return {
+                                      fileId: fileDetail.fileId,
+                                      title: fileDetail.title,
+                                      source: 'graph-file',
+                                      weekLabel: '',
+                                      tagText: 'pending / pdf_to_md',
+                                      tagTone: 'warning',
+                                    };
+                                  }),
+                                );
+                                patchActive((item) => {
+                                  item.graphFiles = [...nextFiles, ...item.graphFiles];
+                                  item.graphFileCount = item.graphFiles.length;
+                                  return item;
+                                });
+                                setMaterialUploadFiles([]);
+                              } catch (actionError) {
+                                setError(actionError instanceof Error ? actionError.message : '上传教学材料失败');
+                              } finally {
+                                setMaterialUploadBusy(false);
+                              }
+                            }}
+                          >
+                            {materialUploadBusy ? '处理中...' : '上传教学材料'}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="teacher-material-library">
+                        <div className="teacher-subsection">
+                          <div className="teacher-subsection-head">
+                            <strong>知识图谱材料</strong>
+                            <span>{`${active?.graphFiles?.length ?? 0} 份`}</span>
+                          </div>
+                          <MaterialShelf
+                            items={(active?.graphFiles ?? []).map((item) => ({
+                              ...item,
+                              onDownload: async (downloadItem) => {
+                                try {
+                                  await handleDownloadFile(downloadItem);
+                                } catch (actionError) {
+                                  setError(actionError instanceof Error ? actionError.message : '下载失败');
+                                }
+                              },
+                            }))}
+                            rows={2}
+                            emptyText="暂无知识图谱材料。"
+                          />
+                        </div>
+
+                        <div className="teacher-subsection">
+                          <div className="teacher-subsection-head">
+                            <strong>课内归档文件</strong>
+                            <span>{`${active?.syllabusFiles?.length ?? 0} 份`}</span>
+                          </div>
+                          <MaterialShelf
+                            items={(active?.syllabusFiles ?? []).map((item) => ({
+                              ...item,
+                              onDownload: async (downloadItem) => {
+                                try {
+                                  await handleDownloadFile(downloadItem);
+                                } catch (actionError) {
+                                  setError(actionError instanceof Error ? actionError.message : '下载失败');
+                                }
+                              },
+                            }))}
+                            rows={1}
+                            emptyText="暂无课内归档文件。"
+                          />
+                        </div>
                       </div>
                     </div>
-                    <div />
-                  </>
-                )}
-              </article>
+                  )}
+                </section>
+              </div>
             </section>
           ) : null}
         </section>

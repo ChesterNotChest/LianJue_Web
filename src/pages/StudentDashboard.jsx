@@ -18,6 +18,7 @@ import {
   getStudyGraph,
   getStudentDashboardData,
   initPersonalSyllabus,
+  runStudyGraphAgent,
 } from '../api/learning_api';
 import { getPersonalRecommendation } from '../api/personal_recommendation_api';
 import {
@@ -1617,12 +1618,19 @@ export default function StudentDashboard({ navigate }) {
       return;
     }
 
-    const response = await getStudyGraph({
+    const response = await runStudyGraphAgent({
       syllabusId: active.syllabusId,
+      subjectTitle: active.title,
+      sourceKind: 'student_dashboard_manual_update',
+      source: {
+        kind: 'student_dashboard_manual_update',
+        trigger: 'manual_button',
+      },
+      personalSyllabusContext: active.personalSyllabus ?? {},
     });
 
     if (!response.success) {
-      throw new Error(response.errorMessage || '个人知识树加载失败');
+      throw new Error(response.errorMessage || '个人知识树更新失败');
     }
 
     setStudyGraphBundle(response);
@@ -2168,23 +2176,15 @@ export default function StudentDashboard({ navigate }) {
                           setStudyGraphError('');
 
                           try {
-                            const response = await getStudyGraph({
-                              syllabusId: active.syllabusId,
-                            });
-
-                            if (!response.success) {
-                              throw new Error(response.errorMessage || '个人知识树加载失败');
-                            }
-
-                            setStudyGraphBundle(response);
+                            await refreshStudyGraphBundle();
                           } catch (actionError) {
-                            setStudyGraphError(actionError instanceof Error ? actionError.message : '个人知识树加载失败');
+                            setStudyGraphError(actionError instanceof Error ? actionError.message : '个人知识树更新失败');
                           } finally {
                             setStudyGraphLoading(false);
                           }
                         }}
                       >
-                        {studyGraphLoading ? '刷新中...' : '刷新'}
+                        {studyGraphLoading ? '更新中...' : '更新'}
                       </Button>
                     </div>
                   </div>
