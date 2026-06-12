@@ -3,15 +3,105 @@ import {
   RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7,
   RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7,
 } from './mock_payloads';
-import { USE_MOCK_API, apiGet, apiPost } from './client';
+import externalInitPersonalSyllabusResponse from '../../../mock/learning_profile/learning_init_personal_syllabus.response.json';
+import externalPersonalSyllabusResponse from '../../../mock/learning_profile/learning_personal_syllabus_detail.response.json';
+import externalUserLearningProfileResponse from '../../../mock/learning_profile/user_learning_profile.response.json';
+import externalStudyGraphResponse from '../../../mock/study_graph/learning_study_graph.response.json';
+import {
+  USE_MOCK_API,
+  USE_MOCK_STUDENT_SYLLABUS_LIST,
+  apiGet,
+  apiPost,
+} from './client';
 import { getFileDetail, listSyllabusFiles } from './file_transmit_api';
 import { getCurrentUserId, requireUserId } from './session';
 
 const RECOMMENDATION_STORAGE_PREFIX = 'student_recommendations_v1';
 const RECOMMENDATION_EXPIRE_ASKS = 5;
+const EXTERNAL_MOCK_DAY_ONE_TIME = '2026-03-02T00:00:00';
 
 function cloneData(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return value;
+  }
   return JSON.parse(JSON.stringify(value));
+}
+
+function getExternalMockSyllabusId() {
+  return Number(
+    externalPersonalSyllabusResponse?.syllabus?.syllabus_id
+      ?? externalUserLearningProfileResponse?.profile?.syllabus_id
+      ?? externalInitPersonalSyllabusResponse?.syllabus?.syllabus_id
+      ?? 20036,
+  );
+}
+
+function createExternalMockStudentSyllabusListResponse() {
+  const profile = externalUserLearningProfileResponse?.profile ?? {};
+  const scopeItem = Array.isArray(profile?.syllabus_scope) ? profile.syllabus_scope[0] ?? {} : {};
+  const syllabus = externalPersonalSyllabusResponse?.syllabus ?? {};
+
+  return {
+    success: true,
+    syllabuses: [
+      {
+        syllabus_id: getExternalMockSyllabusId(),
+        title: scopeItem?.title ?? profile?.subject_title ?? syllabus?.title ?? '大数据概论',
+        isLearning: true,
+        personal_syllabus_path: (
+          scopeItem?.personal_syllabus_path
+          ?? externalInitPersonalSyllabusResponse?.syllabus?.personal_syllabus_path
+          ?? null
+        ),
+        day_one_time: EXTERNAL_MOCK_DAY_ONE_TIME,
+      },
+    ],
+    error_message: '',
+    error_code: '',
+  };
+}
+
+function createExternalMockPersonalSyllabusResponse(syllabusId) {
+  if (Number(syllabusId) !== getExternalMockSyllabusId()) {
+    return {
+      success: true,
+      syllabus: null,
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  return cloneData(externalPersonalSyllabusResponse);
+}
+
+function createExternalMockLearningProfileResponse(syllabusId) {
+  if (Number(syllabusId) !== getExternalMockSyllabusId()) {
+    return {
+      success: true,
+      profile: null,
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  return cloneData(externalUserLearningProfileResponse);
+}
+
+function createExternalMockStudyGraphResponse(syllabusId) {
+  if (Number(syllabusId) !== getExternalMockSyllabusId()) {
+    return {
+      success: true,
+      tree: null,
+      features: null,
+      error_message: '',
+      error_code: '',
+    };
+  }
+
+  return cloneData(externalStudyGraphResponse);
 }
 
 function parseStudentSyllabusListResponse(response) {
@@ -595,15 +685,16 @@ function applyStudyHours(personalSyllabus, weekIndex, studyTimeSpent) {
 }
 
 export async function listStudentSyllabusesRaw(payload = {}) {
-  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
-  if (!USE_MOCK_API) {
+  const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_STUDENT_SYLLABUS_LIST });
+  if (!USE_MOCK_STUDENT_SYLLABUS_LIST) {
     return apiPost('/api/syllabus_list', {
       user_id: userId,
       manage: false,
     });
   }
 
-  return cloneData(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7);
+  return createExternalMockStudentSyllabusListResponse()
+    ?? cloneData(RAW_LIST_ALL_SYLLABUSES_BRIEF_INFO_FOR_LEARNING_RESPONSE_FOR_USER_7);
 }
 
 export async function getPersonalSyllabusRaw(syllabusId, userId = null) {
@@ -615,7 +706,16 @@ export async function getPersonalSyllabusRaw(syllabusId, userId = null) {
     });
   }
 
-  return cloneData(RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[syllabusId]);
+  return createExternalMockPersonalSyllabusResponse(syllabusId)
+    ?? cloneData(
+      RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[syllabusId]
+      ?? {
+        success: true,
+        syllabus: null,
+        error_message: '',
+        error_code: '',
+      },
+    );
 }
 
 export async function askQuestionRaw(payload = {}) {
@@ -847,46 +947,7 @@ export async function getLearningProfileRaw(payload = {}) {
     });
   }
 
-  return {
-    success: true,
-    profile: {
-      user_id: userId,
-      syllabus_id: payload.syllabusId ?? payload.syllabus_id ?? null,
-      syllabus_scope: [],
-      learning_goal: payload.learningGoal ?? '掌握当前课程核心知识点',
-      knowledge_mastery: {
-        overall_level: 'normal',
-        overall_score: 0.67,
-        syllabus_score: 0.62,
-        answer_score: 0.64,
-        engagement_score: 0.74,
-        by_knowledge_point: {},
-        knowledge_point_details: {
-          机器学习: { score: 0.46, attempt_count: 3, level: 'weak' },
-          监督学习: { score: 0.58, attempt_count: 2, level: 'normal' },
-          特征工程: { score: 0.52, attempt_count: 2, level: 'normal' },
-          模型评估: { score: 0.41, attempt_count: 1, level: 'weak' },
-        },
-        weak_weeks: [4, 5],
-        mastered_weeks: [1, 2, 3, 6],
-      },
-      concept_gaps: ['机器学习', '模型评估'],
-      weak_points: ['机器学习', '模型评估'],
-      mastered_points: ['数据清洗', 'Python 基础'],
-      resource_preference: ['documents', 'mindmap'],
-      learning_style: 'visual-driven',
-      dropout_risk: 'medium',
-      dropout_risk_score: 0.38,
-      recent_anomaly: [],
-      confidence: 0.72,
-      evidence: [],
-      source_events: [],
-      signals: {},
-      suggested_personal_syllabus_updates: [],
-    },
-    error_message: '',
-    error_code: '',
-  };
+  return createExternalMockLearningProfileResponse(payload.syllabusId ?? payload.syllabus_id ?? null);
 }
 
 export async function getStudyGraphDetailRaw(payload = {}) {
@@ -1076,22 +1137,7 @@ export async function getStudyGraphRaw(payload = {}) {
   const syllabusId = payload.syllabusId ?? payload.syllabus_id ?? null;
 
   if (USE_MOCK_API) {
-    const [detail, features] = await Promise.all([
-      getStudyGraphDetailRaw({ userId, syllabusId, includeDebug: payload.includeDebug ?? payload.include_debug ?? false }),
-      getStudyGraphFeaturesRaw({ userId, syllabusId }),
-    ]);
-
-    return {
-      success: Boolean(detail?.success) && Boolean(features?.success),
-      user_id: userId,
-      syllabus_id: syllabusId,
-      tree_id: detail?.tree_id ?? features?.tree_id ?? null,
-      tree: detail?.tree ?? null,
-      features: features?.features ?? null,
-      debug: detail?.debug ?? {},
-      error_message: detail?.error_message || features?.error_message || '',
-      error_code: detail?.error_code || features?.error_code || '',
-    };
+    return createExternalMockStudyGraphResponse(syllabusId);
   }
 
   const detail = await getStudyGraphDetailRaw({ userId, syllabusId, includeDebug: payload.includeDebug ?? payload.include_debug ?? false });
@@ -1131,16 +1177,17 @@ export async function initPersonalSyllabusRaw(payload = {}) {
     });
   }
 
-  return {
-    success: true,
-    syllabus: {
-      syllabus_id: payload.syllabusId ?? null,
-      user_id: userId,
-      personal_syllabus_path: `./schedule/student_alt/user_${userId}/${payload.syllabusId ?? 0}_personal.json`,
-    },
-    error_message: '',
-    error_code: '',
-  };
+  return cloneData(externalInitPersonalSyllabusResponse)
+    ?? {
+      success: true,
+      syllabus: {
+        syllabus_id: payload.syllabusId ?? null,
+        user_id: userId,
+        personal_syllabus_path: `./schedule/student_alt/user_${userId}/${payload.syllabusId ?? 0}_personal.json`,
+      },
+      error_message: '',
+      error_code: '',
+    };
 }
 
 export async function updatePersonalSyllabusRaw(payload = {}) {
@@ -1155,7 +1202,8 @@ export async function updatePersonalSyllabusRaw(payload = {}) {
   }
 
   const source = cloneData(
-    RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[payload.syllabusId]?.syllabus
+    createExternalMockPersonalSyllabusResponse(payload.syllabusId)?.syllabus
+      ?? RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[payload.syllabusId]?.syllabus
       ?? RAW_GET_PERSONAL_SYLLABUS_DETAIL_INFO_RESPONSE_BY_SYLLABUS_ID_FOR_USER_7[1]?.syllabus
       ?? null,
   );

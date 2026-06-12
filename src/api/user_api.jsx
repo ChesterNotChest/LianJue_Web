@@ -1,4 +1,4 @@
-import { USE_MOCK_API, apiPost } from './client';
+import { USE_MOCK_AUTH, apiPost } from './client';
 import { saveAuth } from './session';
 
 function parseUserMutationResponse(response) {
@@ -11,7 +11,7 @@ function parseUserMutationResponse(response) {
 }
 
 export async function loginUser(payload = {}) {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_AUTH) {
     const user = {
       user_id: 7,
       user_name: payload.userName ?? payload.user_name ?? 'demo',
@@ -37,7 +37,7 @@ export async function loginUser(payload = {}) {
 }
 
 export async function registerUser(payload = {}) {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_AUTH) {
     const user = {
       user_id: 7,
       user_name: payload.userName ?? payload.user_name ?? 'demo',

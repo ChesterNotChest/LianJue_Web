@@ -1,3 +1,32 @@
 .app-shell {
   width: 100%;
 }
+
+.app-route-error {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: #ffffff;
+  color: #111111;
+}
+
+.app-route-error h1,
+.app-route-error p {
+  margin: 0;
+}
+
+.app-route-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-route-error-actions button {
+  min-height: 42px;
+  border: 2px solid #111111;
+  background: #ffffff;
+  color: #111111;
+  padding: 0 14px;
+}

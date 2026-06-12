@@ -44,6 +44,22 @@ function masteryToGroup(label, isRoot = false) {
   return 'weak';
 }
 
+function colorStateToGroup(label, isRoot = false) {
+  if (isRoot) {
+    return 'root';
+  }
+  if (label === 'mastered') {
+    return 'mastered';
+  }
+  if (label === 'normal') {
+    return 'normal';
+  }
+  if (label === 'learning') {
+    return 'learning';
+  }
+  return 'weak';
+}
+
 function buildGraphModel(bundle) {
   const tree = bundle?.tree ?? {};
   const rawNodes = Array.isArray(tree?.nodes) ? tree.nodes.filter((node) => node && typeof node === 'object') : [];
@@ -68,16 +84,17 @@ function buildGraphModel(bundle) {
     const mastery = typeof node.mastery === 'object' && node.mastery ? node.mastery : {};
     const display = typeof node.display === 'object' && node.display ? node.display : {};
     const masteryScore = Number(mastery.score);
+    const masteryLabel = String(mastery.label || display.color_state || 'weak');
 
     nodes.push({
       id: String(node.node_id),
       title: String(node.title || '未命名知识点'),
       summary: String(node.summary || ''),
-      masteryLabel: String(mastery.label || 'weak'),
+      masteryLabel,
       masteryScore: Number.isFinite(masteryScore) ? clamp(masteryScore, 0, 1) : 0,
-      group: masteryToGroup(String(mastery.label || 'weak')),
+      group: colorStateToGroup(String(display.color_state || masteryLabel || 'weak')),
       degree: 0,
-      displayStage: String(display.stage || ''),
+      displayStage: String(display.growth_stage || display.stage || ''),
       isRoot: false,
       lastUpdatedAt: Number(node.last_updated_at || 0),
     });
@@ -136,10 +153,38 @@ function buildGraphModel(bundle) {
   };
 }
 
+function buildNodeDepthMap(model) {
+  const depths = new Map();
+  const rootNode = model.nodes.find((node) => node.isRoot);
+
+  if (!rootNode) {
+    return depths;
+  }
+
+  depths.set(rootNode.id, 0);
+  const queue = [rootNode.id];
+
+  while (queue.length) {
+    const current = queue.shift();
+    const currentDepth = depths.get(current) ?? 0;
+
+    model.edges.forEach((edge) => {
+      if (edge.source !== current || depths.has(edge.target)) {
+        return;
+      }
+      depths.set(edge.target, currentDepth + 1);
+      queue.push(edge.target);
+    });
+  }
+
+  return depths;
+}
+
 function createInitialNodes(model, width, height) {
   const centerX = 0;
   const centerY = 0;
-  const outerRadius = Math.max(160, Math.min(width, height) * 0.22);
+  const depthMap = buildNodeDepthMap(model);
+  const baseRadius = Math.max(130, Math.min(width, height) * 0.18);
   const nonRootNodes = model.nodes.filter((node) => !node.isRoot);
   const total = nonRootNodes.length || 1;
 
@@ -157,7 +202,8 @@ function createInitialNodes(model, width, height) {
 
     const nonRootIndex = nonRootNodes.findIndex((item) => item.id === node.id);
     const angle = (Math.PI * 2 * nonRootIndex) / total;
-    const ring = outerRadius + ((nonRootIndex % 3) * 54);
+    const depth = depthMap.get(node.id) ?? 1;
+    const ring = baseRadius + ((depth - 1) * 92) + ((nonRootIndex % 2) * 26);
     const nodeRadius = 13 + Math.min(10, node.degree * 1.6) + (node.masteryScore * 6);
 
     return {
@@ -169,6 +215,38 @@ function createInitialNodes(model, width, height) {
       radius: nodeRadius,
     };
   });
+}
+
+function computeFitTransform(nodes, width, height, padding = 88) {
+  if (!nodes.length || width <= 0 || height <= 0) {
+    return { x: width / 2, y: height / 2, k: 1 };
+  }
+
+  const bounds = nodes.reduce((accumulator, node) => ({
+    minX: Math.min(accumulator.minX, node.x - node.radius - 64),
+    maxX: Math.max(accumulator.maxX, node.x + node.radius + 64),
+    minY: Math.min(accumulator.minY, node.y - node.radius - 64),
+    maxY: Math.max(accumulator.maxY, node.y + node.radius + 64),
+  }), {
+    minX: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+  });
+
+  const graphWidth = Math.max(bounds.maxX - bounds.minX, 1);
+  const graphHeight = Math.max(bounds.maxY - bounds.minY, 1);
+  const scaleX = (width - padding * 2) / graphWidth;
+  const scaleY = (height - padding * 2) / graphHeight;
+  const k = clamp(Math.min(scaleX, scaleY), 0.5, 1.18);
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+
+  return {
+    k,
+    x: width / 2 - centerX * k,
+    y: height / 2 - centerY * k,
+  };
 }
 
 function buildAdjacency(edges) {
@@ -204,10 +282,13 @@ export default function StudyGraphOverlay({
   onClose,
   inline = false,
   height = 620,
+  fill = false,
+  inlineMinimal = false,
 }) {
   const stageRef = useRef(null);
   const frameRef = useRef(0);
   const dragRef = useRef(null);
+  const preparedNodesRef = useRef([]);
   const [layout, setLayout] = useState({ width: 1280, height });
   const [transform, setTransform] = useState({ x: 640, y: height / 2, k: 1 });
   const [simNodes, setSimNodes] = useState([]);
@@ -216,6 +297,19 @@ export default function StudyGraphOverlay({
   const graphModel = useMemo(() => buildGraphModel(bundle), [bundle]);
   const adjacency = useMemo(() => buildAdjacency(graphModel.edges), [graphModel.edges]);
   const isVisible = inline || open;
+  const featureStats = {
+    learned: graphModel.features?.learned_topics?.length ?? 0,
+    weak: graphModel.features?.weak_topics?.length ?? 0,
+    mastered: graphModel.features?.mastered_topics?.length ?? 0,
+  };
+
+  const resetTransform = useCallback(() => {
+    if (inline && preparedNodesRef.current.length) {
+      setTransform(computeFitTransform(preparedNodesRef.current, layout.width, layout.height, 72));
+      return;
+    }
+    setTransform({ x: layout.width / 2, y: layout.height / 2, k: 1 });
+  }, [inline, layout.height, layout.width]);
 
   const screenToWorld = useCallback((clientX, clientY, nextTransform = transform) => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -276,9 +370,16 @@ export default function StudyGraphOverlay({
     }
 
     const preparedNodes = createInitialNodes(graphModel, layout.width, layout.height);
+    preparedNodesRef.current = preparedNodes;
 
     if (!preparedNodes.length) {
       return undefined;
+    }
+
+    if (inline) {
+      setTransform(computeFitTransform(preparedNodes, layout.width, layout.height, 72));
+    } else {
+      setTransform({ x: layout.width / 2, y: layout.height / 2, k: 1 });
     }
 
     let frameCount = 0;
@@ -379,7 +480,7 @@ export default function StudyGraphOverlay({
 
       if (!didBootstrapSelection) {
         didBootstrapSelection = true;
-        setSelectedNodeId(activeNodes[0]?.id || '');
+        setSelectedNodeId(activeNodes.find((node) => !node.isRoot)?.id || activeNodes[0]?.id || '');
       }
       setSimNodes(activeNodes.map((node) => ({ ...node })));
       frameRef.current = window.requestAnimationFrame(tick);
@@ -402,7 +503,6 @@ export default function StudyGraphOverlay({
     return adjacency.get(activeNodeId) ?? new Set();
   }, [activeNodeId, adjacency]);
   const selectedNode = simNodes.find((node) => node.id === resolvedSelectedNodeId) ?? simNodes[0] ?? null;
-  const features = graphModel.features ?? {};
 
   function handleStageMouseDown(event) {
     if (event.target.closest?.('.study-graph-inspector, .study-graph-legend, .study-graph-button')) {
@@ -494,7 +594,7 @@ export default function StudyGraphOverlay({
             <p>{graphModel.title}</p>
           </div>
           <div className="study-graph-controls">
-            <button type="button" className="study-graph-button" onClick={() => setTransform({ x: layout.width / 2, y: layout.height / 2, k: 1 })}>
+            <button type="button" className="study-graph-button" onClick={resetTransform}>
               复位
             </button>
             <button type="button" className="study-graph-button is-close" onClick={onClose}>
@@ -507,18 +607,22 @@ export default function StudyGraphOverlay({
       <div
         ref={stageRef}
         className="study-graph-stage"
-        style={inline ? { height: `${height}px` } : undefined}
+        style={inline ? (fill ? { height: '100%' } : { height: `${height}px` }) : undefined}
         onMouseDown={handleStageMouseDown}
         onWheel={handleStageWheel}
       >
-        {inline ? (
+        {inline && !inlineMinimal ? (
           <div className="study-graph-inline-controls">
-            <button type="button" className="study-graph-button" onClick={() => setTransform({ x: layout.width / 2, y: layout.height / 2, k: 1 })}>
+            <button type="button" className="study-graph-button" onClick={resetTransform}>
               复位
             </button>
           </div>
         ) : null}
-        <svg className="study-graph-svg" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="none">
+        <svg
+          className="study-graph-svg"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
           <defs>
             <filter id="studyGraphGlow" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur stdDeviation="6" />
@@ -542,7 +646,7 @@ export default function StudyGraphOverlay({
                   || (highlightedNeighbors.has(edge.source) && edge.target === activeNodeId)
                   || (highlightedNeighbors.has(edge.target) && edge.source === activeNodeId)
                 : false;
-              const isDimmed = activeNodeId && !isHighlighted;
+              const isDimmed = !inline && activeNodeId && !isHighlighted;
 
               return (
                 <path
@@ -559,7 +663,9 @@ export default function StudyGraphOverlay({
 
             {simNodes.map((node) => {
               const isActive = activeNodeId === node.id || highlightedNeighbors.has(node.id);
-              const isDimmed = activeNodeId && !isActive;
+              const isDimmed = !inline && activeNodeId && !isActive;
+              const showTitle = !inline || isActive || node.isRoot || simNodes.length <= 8 || node.degree >= 2;
+              const showScore = !inline || isActive || node.isRoot;
 
               return (
                 <g
@@ -591,36 +697,49 @@ export default function StudyGraphOverlay({
                 >
                   <circle className="study-graph-node-halo" r={node.radius * 1.8} filter="url(#studyGraphGlow)" />
                   <circle className="study-graph-node-core" r={node.radius} />
-                  <text className="study-graph-node-title" textAnchor="middle" y={-node.radius - 12}>
-                    {node.title}
-                  </text>
-                  <text className="study-graph-node-score" textAnchor="middle" y={node.radius + 20}>
-                    {node.isRoot ? '课程根' : `${Math.round(node.masteryScore * 100)}%`}
-                  </text>
+                  {showTitle ? (
+                    <text className="study-graph-node-title" textAnchor="middle" y={-node.radius - 12}>
+                      {node.title}
+                    </text>
+                  ) : null}
+                  {showScore ? (
+                    <text className="study-graph-node-score" textAnchor="middle" y={node.radius + 20}>
+                      {node.isRoot ? '课程根' : `${Math.round(node.masteryScore * 100)}%`}
+                    </text>
+                  ) : null}
                 </g>
               );
             })}
           </g>
         </svg>
 
-        <div className="study-graph-hint">
-          拖拽节点 · 滚轮缩放 · 拖动画布
-        </div>
+        {!inlineMinimal ? (
+          <div className={['study-graph-hint', inline ? 'is-inline' : ''].join(' ')}>
+            {inline ? '拖拽缩放' : '拖拽节点 · 滚轮缩放 · 拖动画布'}
+          </div>
+        ) : null}
 
-        <div className="study-graph-legend">
-          {Object.entries(GROUP_LABELS).map(([key, label]) => (
-            <div key={key} className="study-graph-legend-row">
-              <span className={`study-graph-legend-dot group-${key}`} />
-              {label}
+        {!inlineMinimal ? (
+          <div className={['study-graph-legend', inline ? 'is-inline' : ''].join(' ')}>
+            {Object.entries(GROUP_LABELS).map(([key, label]) => (
+              <div key={key} className="study-graph-legend-row">
+                <span className={`study-graph-legend-dot group-${key}`} />
+                {label}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {selectedNode && !inlineMinimal ? (
+          <aside className={['study-graph-inspector', inline ? 'is-inline' : ''].join(' ')}>
+            <div className="study-graph-inspector-topline">
+              <span className="study-graph-inspector-kicker">
+                {selectedNode.isRoot ? '课程根节点' : formatMasteryLabel(selectedNode.masteryLabel)}
+              </span>
+              {inline ? (
+                <span className="study-graph-inspector-pill">{`关联 ${selectedNode.degree}`}</span>
+              ) : null}
             </div>
-          ))}
-        </div>
-
-        {selectedNode ? (
-          <aside className="study-graph-inspector">
-            <span className="study-graph-inspector-kicker">
-              {selectedNode.isRoot ? '课程根节点' : formatMasteryLabel(selectedNode.masteryLabel)}
-            </span>
             <h3>{selectedNode.title}</h3>
             <p>{selectedNode.summary || '当前节点暂无额外摘要。'}</p>
             <div className="study-graph-inspector-metrics">
@@ -638,9 +757,9 @@ export default function StudyGraphOverlay({
               </div>
             </div>
             <div className="study-graph-inspector-summary">
-              <span>{`已学习 ${features.learned_topics?.length ?? 0}`}</span>
-              <span>{`薄弱 ${features.weak_topics?.length ?? 0}`}</span>
-              <span>{`已掌握 ${features.mastered_topics?.length ?? 0}`}</span>
+              <span>{`已学习 ${featureStats.learned}`}</span>
+              <span>{`薄弱 ${featureStats.weak}`}</span>
+              <span>{`已掌握 ${featureStats.mastered}`}</span>
             </div>
           </aside>
         ) : null}

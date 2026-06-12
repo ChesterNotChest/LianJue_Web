@@ -2,6 +2,12 @@ import { RAW_LIST_ALL_JOBS_RESPONSE_BY_GRAPH_ID } from './mock_payloads';
 import { USE_MOCK_API, apiGet, apiPost } from './client';
 
 function cloneData(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return value;
+  }
   return JSON.parse(JSON.stringify(value));
 }
 

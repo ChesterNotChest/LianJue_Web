@@ -5,6 +5,12 @@ import {
 import { USE_MOCK_API, apiPost, buildUrl, fileToUploadPayload } from './client';
 
 function cloneData(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return value;
+  }
   return JSON.parse(JSON.stringify(value));
 }
 

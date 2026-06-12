@@ -15,6 +15,12 @@ import { getJobLabel, getJobTone, listJobs } from './job_api';
 import { requireUserId } from './session';
 
 function cloneData(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return value;
+  }
   return JSON.parse(JSON.stringify(value));
 }
 

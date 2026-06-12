@@ -1,9 +1,21 @@
 const DEFAULT_BACKEND_URL = 'http://localhost:5000';
 
+function readEnvBoolean(value, fallback = false) {
+  if (value == null || value === '') {
+    return fallback;
+  }
+  return String(value).toLowerCase() === 'true';
+}
+
 const rawBackendUrl = import.meta.env.VITE_BACKEND_URL || DEFAULT_BACKEND_URL;
 
 export const BACKEND_URL = rawBackendUrl.replace(/\/+$/, '');
-export const USE_MOCK_API = String(import.meta.env.VITE_USE_MOCK_API || '').toLowerCase() === 'true';
+export const USE_MOCK_API = readEnvBoolean(import.meta.env.VITE_USE_MOCK_API);
+export const USE_MOCK_AUTH = readEnvBoolean(import.meta.env.VITE_USE_MOCK_AUTH, USE_MOCK_API);
+export const USE_MOCK_STUDENT_SYLLABUS_LIST = readEnvBoolean(
+  import.meta.env.VITE_USE_MOCK_STUDENT_SYLLABUS_LIST,
+  USE_MOCK_API,
+);
 
 export function buildUrl(path, query = {}) {
   const url = new URL(`${BACKEND_URL}${path.startsWith('/') ? path : `/${path}`}`);

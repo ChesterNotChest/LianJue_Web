@@ -1,5 +1,6 @@
 import { USE_MOCK_API, apiPost } from './client';
 import { requireUserId } from './session';
+import externalPersonalRecommendationResponse from '../../../mock/personal_recommendation/personal_recommendation.response.json';
 
 const TOPIC_PATTERNS = [
   ['HDFS', /HDFS/i],
@@ -426,7 +427,7 @@ export async function getPersonalRecommendationRaw(payload = {}) {
   const userId = requireUserId({ ...payload, allowMockFallback: USE_MOCK_API });
 
   if (USE_MOCK_API) {
-    return createMockEmptyRecommendation();
+    return JSON.parse(JSON.stringify(externalPersonalRecommendationResponse ?? createMockEmptyRecommendation()));
   }
 
   return apiPost('/api/personal_recommendation', {
